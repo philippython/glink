@@ -1,0 +1,11 @@
+# Caddy gets and renews the HTTPS certificate automatically.
+# Replace glink.example.com with your domain; point its DNS A/AAAA record at this server first.
+glink.example.com {
+	encode zstd gzip
+	# Live updates (server-sent events) are streamed as they happen; Caddy flushes them automatically.
+	reverse_proxy 127.0.0.1:8787
+	# Allow video uploads up to the app's limit (MAX_UPLOAD_MB, default 500).
+	request_body {
+		max_size 500MB
+	}
+}

@@ -1,0 +1,22 @@
+# systemd unit — copy to /etc/systemd/system/glink.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now glink
+[Unit]
+Description=Glink
+After=network.target
+
+[Service]
+Type=simple
+User=glink
+WorkingDirectory=/opt/glink
+EnvironmentFile=/opt/glink/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --import tsx server/src/index.ts --prod
+Restart=always
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/glink/server/data
+
+[Install]
+WantedBy=multi-user.target

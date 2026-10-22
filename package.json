@@ -1,0 +1,46 @@
+{
+  "name": "glink",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c gray,blue \"npm:server:dev\" \"npm:web\"",
+    "web": "vite",
+    "server": "node --import tsx server/src/index.ts",
+    "server:dev": "node server/scripts/dev.mjs",
+    "build": "tsc -b && tsc -p server/tsconfig.json && vite build",
+    "start": "node --import tsx server/src/index.ts --prod",
+    "test": "node --test --import tsx server/test/*.test.ts",
+    "preview": "vite preview",
+    "backup": "node --import tsx server/scripts/backup.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.136.0",
+    "@hono/node-server": "^2.1.5",
+    "clsx": "^2.1.1",
+    "framer-motion": "^14.0.0",
+    "hono": "^4.13.13",
+    "lucide-react": "^1.53.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "recharts": "^3.10.1",
+    "stripe": "^23.0.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
