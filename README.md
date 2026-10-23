@@ -23,8 +23,8 @@ Open http://localhost:5173. On first start the database is seeded with demo acco
 Or create a fresh account at `/signup`. Open a brand and a creator in two different browsers (or one in a private window) to watch changes arrive live.
 
 ```bash
-npm test           # 25 tests: auth, social sign-in, permissions, matching, pre-flight, the full campaign loop
-npm run build      # typecheck web + server, build the web app into dist/
+npm test           # typecheck + 32 tests: auth, social sign-in, permissions, matching, pre-flight, payments, the full loop
+npm run build      # build the web app into dist/ (npm run typecheck checks types)
 npm start          # production: one server on $PORT serving dist/ and the API
 ```
 

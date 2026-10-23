@@ -126,7 +126,7 @@ cd /opt/glink
 **3. Install, build, then drop development tools**
 ```bash
 sudo -u glink npm ci
-sudo -u glink npm run build        # typechecks everything and builds the website into dist/
+sudo -u glink npm run build        # builds the website into dist/
 sudo -u glink npm prune --omit=dev
 ```
 
