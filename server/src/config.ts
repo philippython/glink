@@ -10,7 +10,7 @@ const isProd = env.NODE_ENV === 'production' || process.argv.includes('--prod')
 export const config = {
   port: Number(env.PORT ?? 8787),
   /** Public URL of the web app — used for OAuth redirects and links in emails. */
-  appUrl: env.APP_URL ?? 'http://localhost:5173',
+  appUrl: (env.APP_URL ?? 'http://localhost:5173').trim().replace(/\/+$/, ''),
   dbPath: env.DATABASE_PATH ?? path.resolve('server/data/glink.db'),
   uploadDir: env.UPLOAD_DIR ?? path.resolve('server/data/uploads'),
   maxUploadBytes: Number(env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,

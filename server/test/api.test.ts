@@ -49,6 +49,15 @@ test('cross-site requests are blocked', async () => {
   assert.equal(res.status, 403)
 })
 
+test('requests from the address the app is served on are allowed, even if APP_URL differs', async () => {
+  const login = (origin: string, host: string) => app.fetch(new Request(`https://${host}/api/auth/login`, {
+    method: 'POST', headers: { origin, 'x-forwarded-host': host, 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'nobody@example.com', password: 'wrongpassword' }),
+  }))
+  assert.equal((await login('https://glink-ab12.onrender.com', 'glink-ab12.onrender.com')).status, 401, 'reaches the login check')
+  assert.equal((await login('https://evil.example', 'glink-ab12.onrender.com')).status, 403, 'other sites stay blocked')
+})
+
 test('brand setup rejects a non-list target_customers with a plain-language field error', async () => {
   const c = new Client()
   await c.post('/api/auth/signup', { name: 'Bo', email: 'bo@brand.com', password: 'longenough1' })

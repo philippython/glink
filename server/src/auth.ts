@@ -60,9 +60,16 @@ export const sameOrigin: MiddlewareHandler = async (c, next) => {
   // Apple's sign-in result is posted to us from appleid.apple.com; the state cookie protects it instead.
   if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.path !== '/api/auth/oauth/apple/callback') {
     const origin = c.req.header('origin')
-    // In development Vite may land on any free port, so any local origin is fine; production only trusts APP_URL.
-    const ok = !origin || origin === config.appUrl || (!config.isProd && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
-    if (!ok) throw new HttpError(403, 'Cross-site request blocked.')
+    // The page and the API share one address, so a request whose Origin matches the host it was sent to
+    // (as seen through the hosting proxy) is our own site. In development Vite may use any local port.
+    const host = c.req.header('x-forwarded-host') ?? c.req.header('host')
+    const ok = !origin || origin === config.appUrl
+      || (!!host && origin.replace(/^https?:\/\//, '') === host)
+      || (!config.isProd && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+    if (!ok) {
+      console.warn(`Blocked cross-site request from ${origin} (APP_URL is ${config.appUrl})`)
+      throw new HttpError(403, 'Cross-site request blocked.')
+    }
   }
   await next()
 }
