@@ -2,7 +2,7 @@
 
 Brands write a campaign brief once; Glink matches it to creators whose proven strengths fit, checks every upload against the brief, holds the budget in escrow, pays on approval and pays bonuses automatically when an ad beats its benchmark. Creators get matched work, a clear brief, a pre-flight check before submitting, and a performance profile that learns from real results.
 
-See **`docs/Glink-How-It-Works.pdf`** for how it works and **`docs/DEPLOYMENT.md`** (also as a PDF) for putting it online.
+See **`docs/Glink-How-It-Works.pdf`** for how it works and **`docs/DEPLOYMENT.md`** (also as a PDF) for putting it online — or **`docs/RENDER.md`** for a step-by-step Render deploy using the included `render.yaml`.
 
 ## Run it
 

@@ -169,7 +169,7 @@ Any platform works if it offers a **persistent disk**, runs **one long-lived ins
 
 Platform notes (check each platform’s current docs; their screens change):
 
-- **Render:** create a *Web Service* from the repo with the commands above, then add a *Disk* under the service settings. Disks need a paid instance type. Render provides HTTPS and a domain.
+- **Render:** follow **`docs/RENDER.md`**, which has a step-by-step guide plus a ready-made `render.yaml` Blueprint.
 - **Railway:** deploy from the repo, add a *Volume* mounted at `/data`, and set the variables. Railway provides HTTPS.
 - **Fly.io:** `fly launch` detects the Dockerfile. Create a volume (`fly volumes create glink_data --size 3`) and mount it in `fly.toml` with `[mounts] source = "glink_data"` and `destination = "/data"`. Keep the machine count at 1.
 

@@ -1,0 +1,51 @@
+# Render Blueprint for Glink — see docs/RENDER.md.
+# One web service with a persistent disk for the SQLite database and uploaded videos.
+services:
+  - type: web
+    name: glink
+    runtime: node
+    plan: starter            # disks need a paid instance; the free plan has no disk and sleeps when idle
+    region: oregon           # pick the region closest to your users before the first deploy
+    numInstances: 1          # SQLite and live updates live in one process — never scale past 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: glink-data
+      mountPath: /var/data
+      sizeGB: 10
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_PATH
+        value: /var/data/glink.db
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: BACKUP_DIR
+        value: /var/data/backups
+      # Uploads are held in memory while saving. Starter has ~512 MB RAM, so keep this modest;
+      # raise it to 500 on Standard (2 GB) or larger.
+      - key: MAX_UPLOAD_MB
+        value: "150"
+      # Set these in the dashboard (Render asks for them when you apply the Blueprint).
+      - key: APP_URL              # e.g. https://glink.onrender.com or your own domain, no trailing slash
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_CURRENCY
+        value: usd
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
