@@ -211,7 +211,15 @@ const migrations: string[] = [
   `,
 ]
 
-fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
+try {
+  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
+} catch (e) {
+  // Usually DATABASE_PATH points at a persistent disk that isn't attached (e.g. /var/data on Render).
+  console.error(`\nCan't create the database folder ${path.dirname(config.dbPath)} (${(e as NodeJS.ErrnoException).code}).\n` +
+    'If DATABASE_PATH points at a persistent disk, check the disk is attached and mounted at that path.\n' +
+    'Without a disk, remove DATABASE_PATH and UPLOAD_DIR to use the app folder (data is lost on every redeploy).\n')
+  process.exit(1)
+}
 export const db = new DatabaseSync(config.dbPath)
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
 
