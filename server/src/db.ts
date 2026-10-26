@@ -209,6 +209,17 @@ const migrations: string[] = [
   ALTER TABLE outbox ADD COLUMN sent_at TEXT;
   ALTER TABLE outbox ADD COLUMN error TEXT;
   `,
+  // 4 — Flexible bonus rules and escrow automation
+  `
+  ALTER TABLE campaigns ADD COLUMN bonus_metric TEXT NOT NULL DEFAULT 'ctr';
+  ALTER TABLE campaigns ADD COLUMN bonus_threshold REAL;
+  ALTER TABLE campaigns ADD COLUMN bonus_window_days INTEGER NOT NULL DEFAULT 14;
+  UPDATE campaigns SET bonus_threshold = benchmark_ctr WHERE bonus_threshold IS NULL;
+  ALTER TABLE creator_profiles ADD COLUMN auto_payout INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE submissions ADD COLUMN reminded_at TEXT;
+  ALTER TABLE submissions ADD COLUMN escalated_at TEXT;
+  ALTER TABLE submissions ADD COLUMN auto_approved INTEGER NOT NULL DEFAULT 0;
+  `,
 ]
 
 try {

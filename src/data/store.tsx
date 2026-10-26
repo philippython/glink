@@ -52,7 +52,7 @@ function normalize(s: MarketState | null): { state: State; me: CreatorProfile } 
       wallet: s?.wallet ?? 0,
       billing: s?.billing ?? { held: 0, ledger: [], budgets: {} },
       payouts: s?.payouts ?? [],
-      payoutAccount: s?.payoutAccount ?? { connected: false, ready: false },
+      payoutAccount: s?.payoutAccount ?? { connected: false, ready: false, auto: true },
     },
   }
 }
@@ -115,6 +115,7 @@ interface Store {
   connectPayouts: () => Promise<void>
   syncPayouts: () => Promise<boolean>
   openPayoutDashboard: () => Promise<void>
+  setAutoPayout: (auto: boolean) => Promise<void>
   // shared
   markRead: (id: string) => void
   markAllRead: () => Promise<void>
@@ -142,6 +143,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setUser(u)
         setConfig({ providers: health.providers ?? [], ai: health.ai, demo: !!health.demo, testFunds: !!health.testFunds, payments: health.payments ?? 'none', email: !!health.email })
         if (u) { setLoading(true); setSnap(await api<MarketState>('/state')) } else setSnap(null)
+      } catch (e) {
+        // A session that expired (or was signed out in another tab) just means "signed out".
+        if (e instanceof ApiError && e.status === 401) { setUser(null); setSnap(null) } else throw e
       } finally {
         setLoading(false)
         setReady(true)
@@ -216,6 +220,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       connectPayouts: () => api<{ url: string }>('/payouts/connect', { body: {} }).then(r => { window.location.assign(r.url) }),
       syncPayouts: () => act(() => api<{ ready: boolean }>('/payouts/sync', { body: {} })).then(r => r.ready),
       openPayoutDashboard: () => api<{ url: string }>('/payouts/dashboard', { body: {} }).then(r => { window.open(r.url, '_blank', 'noopener') }),
+      setAutoPayout: auto => act(() => api('/payouts/settings', { body: { auto } })).then(() => undefined),
 
       markRead: id => { void api(`/notifications/${id}/read`, { body: {} }).then(refresh) },
       markAllRead: () => act(() => api('/notifications/read-all', { body: {} })).then(() => undefined),

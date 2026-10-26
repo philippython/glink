@@ -5,7 +5,8 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, ErrorBanner, Field, Input, Loading, Select, Spinner, Textarea, ThemeSwitch } from '../../components/kit'
 import { Logo } from '../../components/Logo'
 import { SocialButtons } from '../../components/SocialButtons'
-import { COUNTRIES, toList, validateBrand, validateCreator, type FieldErrors, type Role } from '../../data/market'
+import { TagPicker } from '../../components/TagPicker'
+import { AUDIENCES, CATEGORIES, COUNTRIES, validateBrand, validateCreator, type FieldErrors, type Role } from '../../data/market'
 import { useStore } from '../../data/store'
 import { ApiError, errorMessage } from '../../lib/api'
 import { photos } from '../../lib/images'
@@ -289,11 +290,11 @@ function useSetupForm<T>(save: (payload: T) => Promise<FieldErrors | null>, vali
 export function BrandSetup() {
   const { setupBrand } = useStore()
   const { redirect } = useSignedIn()
-  const [f, setF] = useState({ name: '', country: '', targetCustomers: '', description: '' })
+  const [f, setF] = useState({ name: '', country: '', targetCustomers: [] as string[], description: '' })
   // List fields are always sent as arrays.
   const form = useSetupForm(setupBrand, validateBrand)
   if (redirect) return redirect
-  const submit = (e: FormEvent) => { e.preventDefault(); void form.run({ ...f, targetCustomers: toList(f.targetCustomers) }) }
+  const submit = (e: FormEvent) => { e.preventDefault(); void form.run(f) }
 
   return (
     <AuthFrame>
@@ -307,8 +308,8 @@ export function BrandSetup() {
             <option value="">Choose a country</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
           </Select>
         </Field>
-        <Field label="Target customers" htmlFor="b-tc" error={form.errors.targetCustomers} hint="Separate with commas, e.g. new parents, runners">
-          <Input id="b-tc" value={f.targetCustomers} onChange={e => setF({ ...f, targetCustomers: e.target.value })} invalid={!!form.errors.targetCustomers} />
+        <Field label="Target customers" htmlFor="b-tc" error={form.errors.targetCustomers} hint="Search the list or type your own and press Enter.">
+          <TagPicker id="b-tc" value={f.targetCustomers} onChange={v => setF({ ...f, targetCustomers: v })} suggestions={AUDIENCES} invalid={!!form.errors.targetCustomers} />
         </Field>
         <Field label="Brand description" htmlFor="b-desc" error={form.errors.description}>
           <Textarea id="b-desc" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} invalid={!!form.errors.description} placeholder="What you sell and who it’s for" />
@@ -323,10 +324,10 @@ export function BrandSetup() {
 export function CreatorSetup() {
   const { setupCreator, user } = useStore()
   const { redirect } = useSignedIn()
-  const [f, setF] = useState({ displayName: user?.name ?? '', country: '', niches: '', bio: '' })
+  const [f, setF] = useState({ displayName: user?.name ?? '', country: '', niches: [] as string[], bio: '' })
   const form = useSetupForm(setupCreator, validateCreator)
   if (redirect) return redirect
-  const submit = (e: FormEvent) => { e.preventDefault(); void form.run({ ...f, niches: toList(f.niches) }) }
+  const submit = (e: FormEvent) => { e.preventDefault(); void form.run(f) }
 
   return (
     <AuthFrame>
@@ -340,8 +341,8 @@ export function CreatorSetup() {
             <option value="">Choose a country</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
           </Select>
         </Field>
-        <Field label="Niches" htmlFor="c-niches" error={form.errors.niches} hint="Separate with commas, e.g. skincare, fitness">
-          <Input id="c-niches" value={f.niches} onChange={e => setF({ ...f, niches: e.target.value })} invalid={!!form.errors.niches} />
+        <Field label="Niches" htmlFor="c-niches" error={form.errors.niches} hint="What you make content about. Matching uses these.">
+          <TagPicker id="c-niches" value={f.niches} onChange={v => setF({ ...f, niches: v })} suggestions={CATEGORIES} quick={CATEGORIES.slice(0, 8)} quickLabel="Popular" placeholder="e.g. Skincare, Fitness" invalid={!!form.errors.niches} />
         </Field>
         <Field label="Bio" htmlFor="c-bio" error={form.errors.bio}><Textarea id="c-bio" value={f.bio} onChange={e => setF({ ...f, bio: e.target.value })} invalid={!!form.errors.bio} /></Field>
         <Button type="submit" variant="brand" className="w-full" loading={form.busy}>Create my profile</Button>

@@ -4,6 +4,7 @@ import { useStore } from './data/store'
 import { useTheme, type ThemePref } from './lib/theme'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Shell } from './components/Shell'
+import { CrashScreen, ErrorBoundary } from './components/ErrorBoundary'
 import Landing from './pages/Landing'
 import { BrandSetup, ChoosePath, CreatorSetup, ForgotPassword, Login, Preparing, ResetPassword } from './pages/auth/Onboarding'
 // Brand side
@@ -46,6 +47,7 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <ThemeSync />
+      <ErrorBoundary name="app" fallback={<CrashScreen />}>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -95,6 +97,7 @@ export default function App() {
         <Route path="/app/*" element={<Navigate to="/brand" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </MotionConfig>
   )
 }

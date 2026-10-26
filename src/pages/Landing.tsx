@@ -3,7 +3,8 @@ import { ArrowRight, Check, ChevronDown, Lock, Menu, ShieldCheck, Sparkles, User
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CoreLoop } from '../components/CoreLoop'
-import { Avatar, Button, Label, LinkButton, StrengthBar, ThemeSwitch } from '../components/kit'
+import { ErrorBoundary } from '../components/ErrorBoundary'
+import { Avatar, Button, Label, LinkButton, StrengthBar, ThemeToggle } from '../components/kit'
 import { Logo } from '../components/Logo'
 import type { Role } from '../data/market'
 import { useStore } from '../data/store'
@@ -14,7 +15,7 @@ import { ClipWall, CountUp, FeedPings, PhoneFeed, TrendTicker } from '../compone
 
 const ease = [0.22, 1, 0.36, 1] as const
 const stepTones = [['bg-coral', 'bg-tint-coral text-coral'], ['bg-rose', 'bg-tint-rose text-rose'], ['bg-violet', 'bg-tint-violet text-violet'], ['bg-lime', 'bg-tint-lime text-fg']]
-const nav = [['How it works', '#how'], ['For brands', '#brands'], ['For creators', '#creators'], ['Pricing', '#pricing'], ['FAQ', '#faq']]
+const nav = [['How it works', '#how'], ['Brands', '#brands'], ['Creators', '#creators'], ['Pricing', '#pricing'], ['FAQ', '#faq']]
 
 function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
   return (
@@ -73,29 +74,29 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-bg text-fg">
-      {/* ── Nav ── */}
-      <header className="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5">
-          <Link to="/" className="flex items-center gap-2.5"><Logo size={28} /><span className="text-[16px] font-semibold tracking-tight">Glink</span></Link>
-          <nav className="hidden gap-6 text-[13.5px] text-muted lg:flex" aria-label="Sections">
-            {nav.map(([l, h]) => <a key={h} href={h} className="hover:text-fg">{l}</a>)}
+      {/* ── Nav: a floating bar that fits every width ── */}
+      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 rounded-2xl border border-line bg-bg/80 pl-3.5 pr-2 shadow-[0_10px_30px_-14px_rgb(0_0_0/0.18)] backdrop-blur-xl sm:pl-4">
+          <Link to="/" className="flex shrink-0 items-center gap-2" onClick={() => setMenu(false)}><Logo size={28} /><span className="text-[16px] font-semibold tracking-tight">Glink</span></Link>
+          <nav className="mx-auto hidden items-center md:flex" aria-label="Sections">
+            {nav.map(([l, h]) => <a key={h} href={h} className="rounded-full px-3 py-1.5 text-[13.5px] text-muted transition hover:bg-subtle hover:text-fg">{l}</a>)}
           </nav>
-          <div className="ml-auto hidden items-center gap-3 md:flex">
-            <div className="w-36"><ThemeSwitch /></div>
-            <AuthButtons />
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:ml-0">
+            <ThemeToggle />
+            <div className="hidden sm:block"><AuthButtons /></div>
+            {!user && <LinkButton to="/signup" variant="brand" size="sm" className="sm:hidden">Sign up</LinkButton>}
+            <button onClick={() => setMenu(m => !m)} className="grid h-9 w-9 place-items-center rounded-lg hover:bg-subtle md:hidden" aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu}>
+              {menu ? <X size={18} /> : <Menu size={18} />}
+            </button>
           </div>
-          <button onClick={() => setMenu(m => !m)} className="ml-auto grid h-9 w-9 place-items-center rounded-lg hover:bg-subtle md:hidden" aria-label={menu ? 'Close menu' : 'Open menu'} aria-expanded={menu}>
-            {menu ? <X size={18} /> : <Menu size={18} />}
-          </button>
         </div>
         {menu && (
-          <div className="border-t border-line px-5 pb-5 pt-3 md:hidden">
-            <nav className="flex flex-col text-[15px]" aria-label="Sections">
-              {nav.map(([l, h]) => <a key={h} href={h} onClick={() => setMenu(false)} className="border-b border-line py-3 text-fg">{l}</a>)}
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="card mx-auto mt-2 max-w-6xl rounded-2xl p-3 shadow-[0_20px_40px_-20px_rgb(0_0_0/0.25)] md:hidden">
+            <nav className="grid grid-cols-2 gap-1 text-[15px]" aria-label="Sections">
+              {nav.map(([l, h]) => <a key={h} href={h} onClick={() => setMenu(false)} className="rounded-xl px-3 py-2.5 text-fg hover:bg-subtle">{l}</a>)}
             </nav>
-            <div className="mt-4"><AuthButtons stacked /></div>
-            <div className="mt-4"><ThemeSwitch /></div>
-          </div>
+            <div className="mt-2 border-t border-line pt-3"><AuthButtons stacked /></div>
+          </motion.div>
         )}
       </header>
 
@@ -111,13 +112,13 @@ export default function Landing() {
         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease }}>
           <span className="grad-border mb-6 inline-flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-[12.5px] font-medium text-fg">
             <span className="rounded-full bg-lime px-2 py-0.5 text-[11px] font-semibold text-pure-black">New</span>
-            <Sparkles size={12} className="text-rose" /> UGC that learns from every campaign
+            <Sparkles size={12} className="text-rose" /> The UGC marketplace for brands and creators
           </span>
           <h1 className="title-serif text-[44px] leading-[1.05] text-fg md:text-[64px]">
-            The right creators.<br />Videos that follow the brief.<br /><span className="text-grad italic">Paid for results.</span>
+            Hire the best creators<br />for your brand.<br /><span className="text-grad italic">Pay only for results.</span>
           </h1>
           <p className="mt-6 max-w-xl text-[16.5px] leading-relaxed text-muted">
-            Write one brief. Glink matches it to creators whose real results fit, checks every video before you see it, and releases payment only when you approve — with bonuses when an ad wins.
+            Post a brief in minutes. Glink matches you with creators who’ve already delivered in your category, checks every video before you see it, and releases payment only when you approve.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             {user && home ? (
@@ -226,7 +227,7 @@ export default function Landing() {
             </Reveal>
           ))}
         </div>
-        <Reveal className="mt-16"><CoreLoop /></Reveal>
+        <Reveal className="mt-16"><ErrorBoundary name="core-loop"><CoreLoop /></ErrorBoundary></Reveal>
       </Section>
 
       {/* ── For brands / creators ── */}

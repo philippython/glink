@@ -72,7 +72,8 @@ function campaignView(c: CampaignRow) {
     storyFlow: j(c.story_flow, []), mustInclude: j(c.must_include, []), avoid: j(c.avoid, []),
     deliverables: j(c.deliverables, {}), baseFee: toDollars(c.base_fee), bonusAmount: toDollars(c.bonus_amount),
     bonusRule: c.sourcing === 'contest' ? `Prize pool: ${prizes.map(p => `$${(p / 100).toLocaleString()}`).join(' / ')}` : c.bonus_rule,
-    benchmarkCtr: c.benchmark_ctr, prizes: prizes.map(toDollars), creatorsWanted: c.creators_wanted, sourcing: c.sourcing,
+    benchmarkCtr: c.benchmark_ctr, bonusMetric: c.bonus_metric ?? 'ctr', bonusThreshold: c.bonus_threshold ?? c.benchmark_ctr, bonusWindowDays: c.bonus_window_days ?? 14,
+    prizes: prizes.map(toDollars), creatorsWanted: c.creators_wanted, sourcing: c.sourcing,
     timeline: j(c.timeline, []), status: c.status, createdAt: c.created_at.slice(0, 10), deadline: deadlineOf(c),
   }
 }
@@ -155,7 +156,7 @@ export function snapshot(user: User) {
       submissions: all<SubmissionRow>('SELECT * FROM submissions WHERE creator_id = ?', p.id).map(submissionView),
       payments: all<Parameters<typeof paymentView>[0]>('SELECT * FROM payments WHERE creator_id = ? ORDER BY created_at DESC', p.id).map(paymentView),
       payouts: all<{ id: string; amount: number; created_at: string; stripe_transfer_id: string | null }>('SELECT * FROM payouts WHERE creator_id = ? ORDER BY created_at DESC', p.id).map(x => ({ id: x.id, amount: toDollars(x.amount), date: x.created_at.slice(0, 10), toBank: !!x.stripe_transfer_id })),
-      payoutAccount: (a => ({ connected: !!a?.stripe_account_id, ready: !!a?.payouts_enabled }))(one<{ stripe_account_id: string | null; payouts_enabled: number }>('SELECT stripe_account_id, payouts_enabled FROM creator_profiles WHERE id = ?', p.id)),
+      payoutAccount: (a => ({ connected: !!a?.stripe_account_id, ready: !!a?.payouts_enabled, auto: a ? !!a.auto_payout : true }))(one<{ stripe_account_id: string | null; payouts_enabled: number; auto_payout: number }>('SELECT stripe_account_id, payouts_enabled, auto_payout FROM creator_profiles WHERE id = ?', p.id)),
     }
   }
   return base

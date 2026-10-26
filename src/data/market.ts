@@ -29,7 +29,8 @@ export interface CreatorProfile {
   coach: { insight: string; advice: string; improving: string[]; valued: string[]; nextSkill: string }
 }
 
-export type Goal = 'Purchases' | 'Sign-ups' | 'Content testing' | 'Awareness'
+import type { BonusMetric, Goal } from '../../server/src/taxonomy.ts'
+export type { BonusMetric, Goal }
 export type Sourcing = 'auto' | 'handpick' | 'contest'
 export interface Deliverables { count: number; aspectRatio: string; minSec: number; maxSec: number; rawFootage: boolean }
 
@@ -53,6 +54,9 @@ export interface Campaign {
   bonusAmount: number
   bonusRule: string
   benchmarkCtr: number
+  bonusMetric: BonusMetric
+  bonusThreshold: number
+  bonusWindowDays: number
   prizes: number[]
   creatorsWanted: number
   sourcing: Sourcing
@@ -128,7 +132,7 @@ export interface MarketState {
   me?: CreatorProfile | null
   meCreatorId?: string
   payouts?: { id: string; amount: number; date: string; toBank?: boolean }[]
-  payoutAccount?: { connected: boolean; ready: boolean }
+  payoutAccount?: { connected: boolean; ready: boolean; auto: boolean }
   // both
   campaigns?: Campaign[]
   matches?: Match[]
@@ -170,5 +174,5 @@ export function validateCreator(input: { displayName: string; country: string; n
   return e
 }
 
-export const COUNTRIES = ['United States', 'United Kingdom', 'Canada', 'Australia', 'Nigeria', 'Ghana', 'Kenya', 'South Africa', 'Germany', 'France', 'Spain', 'Portugal', 'India']
-export const CATEGORIES = ['Skincare', 'Beauty', 'Wellness', 'Fitness', 'Food & Bev', 'Technology', 'Finance', 'Pets', 'Fashion', 'Home', 'Parenting', 'Gaming', 'Travel']
+// One list for the whole app and the server: every country, the categories, goals and audience suggestions.
+export { AUDIENCES, audienceSuggestions, BONUS_METRICS, BONUS_METRIC_KEYS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, GOAL_NAMES, GOALS, goalsFor } from '../../server/src/taxonomy.ts'

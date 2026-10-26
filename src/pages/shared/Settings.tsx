@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   Button, ErrorBanner, Field, Input, Label, Panel, PageHeader, Segmented, Select, Textarea, useToast,
 } from '../../components/kit'
-import { COUNTRIES, toList, validateBrand, validateCreator, type FieldErrors, type Role } from '../../data/market'
+import { AUDIENCES, CATEGORIES, COUNTRIES, validateBrand, validateCreator, type FieldErrors, type Role } from '../../data/market'
+import { TagPicker } from '../../components/TagPicker'
 import { useStore } from '../../data/store'
 import { errorMessage } from '../../lib/api'
 import { compact } from '../../lib/format'
@@ -67,8 +68,8 @@ export default function Settings({ role }: { role: Role }) {
   const [banner, setBanner] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const [b, setB] = useState({ name: state.brand.name, country: state.brand.country, description: state.brand.description, targetCustomers: state.brand.targetCustomers.join(', ') })
-  const [c, setC] = useState({ country: me.country, bio: me.bio, displayName: me.displayName, niches: me.niches.join(', '), baseRate: me.baseRate, availability: me.availability })
+  const [b, setB] = useState({ name: state.brand.name, country: state.brand.country, description: state.brand.description, targetCustomers: [...state.brand.targetCustomers] })
+  const [c, setC] = useState({ country: me.country, bio: me.bio, displayName: me.displayName, niches: [...me.niches], baseRate: me.baseRate, availability: me.availability })
   const [channel, setChannel] = useState<{ platform: string; handle: string; followers: string } | null>(null)
 
   const save = async () => {
@@ -78,11 +79,11 @@ export default function Settings({ role }: { role: Role }) {
     try {
       if (name.trim() && name.trim() !== session.name) await updateMe({ name: name.trim() })
       if (role === 'brand') {
-        const payload = { ...b, targetCustomers: toList(b.targetCustomers) }
+        const payload = b
         e = validateBrand(payload)
         if (!Object.keys(e).length) e = await updateBrand(payload)
       } else {
-        const payload = { ...c, niches: toList(c.niches) }
+        const payload = c
         e = validateCreator(payload)
         if (!Object.keys(e).length) e = await updateCreator(payload)
       }
@@ -134,7 +135,7 @@ export default function Settings({ role }: { role: Role }) {
           <fieldset disabled={!canEditBrand} className="space-y-4">
             <Field label="Company name" htmlFor="s-b-name" error={errors.name}><Input id="s-b-name" value={b.name} onChange={e => setB({ ...b, name: e.target.value })} invalid={!!errors.name} /></Field>
             <Field label="Country" htmlFor="s-b-country"><Select id="s-b-country" value={b.country} onChange={e => setB({ ...b, country: e.target.value })}>{COUNTRIES.map(x => <option key={x}>{x}</option>)}</Select></Field>
-            <Field label="Target customers" htmlFor="s-b-tc" error={errors.targetCustomers} hint="Separate with commas."><Input id="s-b-tc" value={b.targetCustomers} onChange={e => setB({ ...b, targetCustomers: e.target.value })} invalid={!!errors.targetCustomers} /></Field>
+            <Field label="Target customers" htmlFor="s-b-tc" error={errors.targetCustomers} hint="Search the list or type your own and press Enter."><TagPicker id="s-b-tc" value={b.targetCustomers} onChange={v => setB({ ...b, targetCustomers: v })} suggestions={AUDIENCES} invalid={!!errors.targetCustomers} /></Field>
             <Field label="Brand description" htmlFor="s-b-desc" error={errors.description}><Textarea id="s-b-desc" value={b.description} onChange={e => setB({ ...b, description: e.target.value })} invalid={!!errors.description} /></Field>
           </fieldset>
         </Section>
@@ -142,7 +143,7 @@ export default function Settings({ role }: { role: Role }) {
         <>
           <Section title="Creator profile">
             <Field label="Display name" htmlFor="s-dn" error={errors.displayName}><Input id="s-dn" value={c.displayName} onChange={e => setC({ ...c, displayName: e.target.value })} invalid={!!errors.displayName} /></Field>
-            <Field label="Niches" htmlFor="s-niches" error={errors.niches} hint="Separate with commas. Matching uses these."><Input id="s-niches" value={c.niches} onChange={e => setC({ ...c, niches: e.target.value })} invalid={!!errors.niches} /></Field>
+            <Field label="Niches" htmlFor="s-niches" error={errors.niches} hint="Matching uses these."><TagPicker id="s-niches" value={c.niches} onChange={v => setC({ ...c, niches: v })} suggestions={CATEGORIES} invalid={!!errors.niches} /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Base rate per video (USD)" htmlFor="s-rate" hint="Brands with a lower fee see you as over budget."><Input id="s-rate" type="number" min={0} value={c.baseRate} onChange={e => setC({ ...c, baseRate: +e.target.value })} /></Field>
               <Field label="Availability" htmlFor="s-av" hint="“Unavailable” pauses new matches."><Select id="s-av" value={c.availability} onChange={e => setC({ ...c, availability: e.target.value as typeof c.availability })}>{['Available', 'Limited', 'Unavailable'].map(x => <option key={x}>{x}</option>)}</Select></Field>

@@ -1,6 +1,8 @@
 import { all, j, one, run, tx } from './db.ts'
 import { brandUsers, creatorUser, emit, notify } from './events.ts'
 import { rankCreators, selectInvites, type CampaignInput, type CreatorInput, type HistoryItem, type Strengths } from './matching.ts'
+import { config } from './config.ts'
+import { BONUS_METRICS, describeBonus, type BonusMetric } from './taxonomy.ts'
 import { addDays, HttpError, id, now } from './util.ts'
 
 // ─── Row types ──────────────────────────────────────────────────────────────
@@ -9,6 +11,7 @@ export interface CampaignRow {
   id: string; brand_id: string; name: string; product: string; category: string; goal: CampaignInput['goal']; market: string
   target_customers: string; creative_angle: string; suggested_opening: string; story_flow: string; must_include: string; avoid: string
   deliverables: string; base_fee: number; bonus_amount: number; bonus_rule: string; benchmark_ctr: number; creators_wanted: number
+  bonus_metric: BonusMetric; bonus_threshold: number | null; bonus_window_days: number
   sourcing: 'auto' | 'handpick' | 'contest'; prizes: string; timeline: string; status: 'draft' | 'live' | 'completed'; created_at: string
 }
 export interface SubmissionRow {
@@ -16,6 +19,7 @@ export interface SubmissionRow {
   mime: string | null; size_bytes: number | null; duration: number | null; width: number | null; height: number | null; script: string | null
   preflight: string; brief_match: number | null; ai_feedback: string | null; status: string; review_note: string | null
   submitted_at: string | null; approved_at: string | null; attempts: number; winning: number; placement: number | null; metrics: string | null
+  reminded_at: string | null; escalated_at: string | null; auto_approved: number
 }
 export interface Metrics { impressions: number; thumbstop: number; holdRate: number; clicks: number; conversions: number; spend: number; recordedAt: string }
 
@@ -142,7 +146,7 @@ function pay(camp: CampaignRow, creatorId: string, submissionId: string | null, 
 
 // ─── Reviews, bonuses, contests ─────────────────────────────────────────────
 
-export function approve(sub: SubmissionRow, camp: CampaignRow, reviewerId: string, note: string) {
+export function approve(sub: SubmissionRow, camp: CampaignRow, reviewerId: string | null, note: string) {
   tx(() => {
     if (!pay(camp, sub.creator_id, sub.id, 'base', camp.base_fee)) throw new HttpError(402, 'Not enough funds in escrow or your wallet to pay this creator. Top up in Billing.')
     run("UPDATE submissions SET status = 'approved', approved_at = ?, review_note = ?, reviewed_by = ? WHERE id = ?", now(), note || null, reviewerId, sub.id)
@@ -151,27 +155,52 @@ export function approve(sub: SubmissionRow, camp: CampaignRow, reviewerId: strin
   maybeCompleteCampaign(camp.id)
 }
 
+/** The value of a campaign's bonus metric for one set of results. */
+export function metricValue(metric: BonusMetric, m: Omit<Metrics, 'recordedAt'>) {
+  switch (metric) {
+    case 'ctr': return m.impressions ? (m.clicks / m.impressions) * 100 : 0
+    case 'cvr': return m.clicks ? (m.conversions / m.clicks) * 100 : 0
+    case 'hook': return m.thumbstop
+    case 'hold': return m.holdRate
+    case 'cpa': return m.conversions ? m.spend / m.conversions : Infinity
+  }
+}
+
+export const bonusThreshold = (camp: CampaignRow) => camp.bonus_threshold ?? camp.benchmark_ctr
+const windowMs = (camp: CampaignRow) => (camp.bonus_window_days || 14) * 86400_000
+
+/** Does a result beat the campaign's bonus rule? (Cost per result wins by coming in under the threshold.) */
+export function beatsRule(camp: CampaignRow, value: number) {
+  const t = bonusThreshold(camp)
+  return BONUS_METRICS[camp.bonus_metric ?? 'ctr'].better === 'lower' ? value > 0 && value < t : value > t
+}
+
+const fmtMetric = (metric: BonusMetric, v: number) => BONUS_METRICS[metric].unit === '$' ? `$${v.toFixed(2)}` : `${v.toFixed(2)}%`
+
 /**
- * Records ad results for an approved creative and evaluates the bonus rule.
- * Rule: the creative "wins" if its click-through rate beats the campaign
- * benchmark within 14 days of approval; the bonus is then paid automatically.
+ * Records ad results for an approved creative and evaluates the campaign's bonus rule
+ * (metric, threshold and window chosen by the brand). A winning creative's bonus is paid automatically.
  */
 export function recordMetrics(sub: SubmissionRow, camp: CampaignRow, input: Omit<Metrics, 'recordedAt'>) {
   const metrics: Metrics = { ...input, recordedAt: now() }
   run('UPDATE submissions SET metrics = ? WHERE id = ?', JSON.stringify(metrics), sub.id)
-  const ctr = metrics.impressions ? (metrics.clicks / metrics.impressions) * 100 : 0
-  const withinWindow = !!sub.approved_at && Date.now() - new Date(sub.approved_at).getTime() <= 14 * 86400_000
+  const metric = camp.bonus_metric ?? 'ctr'
+  const ctr = metricValue('ctr', metrics)
+  const value = metricValue(metric, metrics)
+  const withinWindow = !!sub.approved_at && Date.now() - new Date(sub.approved_at).getTime() <= windowMs(camp)
+  const wins = withinWindow && beatsRule(camp, value)
   let bonusPaid = false
-  if (!sub.winning && withinWindow && ctr > camp.benchmark_ctr) {
+  if (!sub.winning && wins) {
     tx(() => {
       run('UPDATE submissions SET winning = 1 WHERE id = ?', sub.id)
       bonusPaid = pay(camp, sub.creator_id, sub.id, 'bonus', camp.bonus_amount)
     })
-    notify(creatorUser(sub.creator_id), { title: camp.bonus_amount ? `Bonus earned: $${camp.bonus_amount / 100}` : 'Your video is winning', body: `${camp.name} beat the ${camp.benchmark_ctr}% click-through benchmark (${ctr.toFixed(2)}%).`, link: '/creator/earnings' })
-    notify(brandUsers(camp.brand_id), { title: 'A creative is winning', body: `${camp.name}, video ${sub.idx}: ${ctr.toFixed(2)}% CTR vs ${camp.benchmark_ctr}% benchmark.`, link: '/brand/performance' })
+    const rule = describeBonus(metric, bonusThreshold(camp), camp.bonus_window_days || 14)
+    notify(creatorUser(sub.creator_id), { title: camp.bonus_amount ? `Bonus earned: $${camp.bonus_amount / 100}` : 'Your video is winning', body: `${camp.name}: ${fmtMetric(metric, value)} met the rule “${rule}”.`, link: '/creator/earnings' })
+    notify(brandUsers(camp.brand_id), { title: 'A creative is winning', body: `${camp.name}, video ${sub.idx}: ${BONUS_METRICS[metric].label} ${fmtMetric(metric, value)} (rule: ${rule}).`, link: '/brand/performance' })
   }
   emit([...brandUsers(camp.brand_id), ...creatorUser(sub.creator_id)])
-  return { ctr, winning: !!sub.winning || ctr > camp.benchmark_ctr && withinWindow, bonusPaid }
+  return { ctr, value, winning: !!sub.winning || wins, bonusPaid }
 }
 
 export function pickWinner(sub: SubmissionRow, camp: CampaignRow, place: number) {
@@ -200,7 +229,7 @@ export function maybeCompleteCampaign(campaignId: string) {
   const directDone = camp.sourcing !== 'contest' && accepted >= camp.creators_wanted && open === 0
   if (!contestDone && !directDone) return
   run("UPDATE campaigns SET status = 'completed' WHERE id = ?", campaignId)
-  // Keep the bonus share in escrow until the 14-day window closes; release the rest now.
+  // Keep the bonus share in escrow until the bonus window closes; release the rest now.
   const bonusReserve = camp.sourcing === 'contest' ? 0 : one<{ n: number }>(`SELECT COUNT(*) n FROM submissions WHERE campaign_id = ? AND status IN ('approved','paid') AND winning = 0`, campaignId)!.n * camp.bonus_amount
   const leftover = escrowHeld(campaignId) - bonusReserve
   if (leftover > 0) ledgerEntry(camp.brand_id, 'refund', leftover, `Unused budget from ${camp.name}`, campaignId)
@@ -218,9 +247,55 @@ export function sweep() {
   // Bonus window closed: release the remaining bonus reserve of completed campaigns.
   for (const c of all<CampaignRow>("SELECT * FROM campaigns WHERE status = 'completed' AND sourcing != 'contest'")) {
     const lastApproval = one<{ a: string | null }>('SELECT MAX(approved_at) a FROM submissions WHERE campaign_id = ?', c.id)!.a
-    if (lastApproval && Date.now() - new Date(lastApproval).getTime() > 14 * 86400_000) {
+    if (lastApproval && Date.now() - new Date(lastApproval).getTime() > windowMs(c)) {
       const left = escrowHeld(c.id)
       if (left > 0) ledgerEntry(c.brand_id, 'refund', left, `Unclaimed bonuses from ${c.name}`, c.id)
+    }
+  }
+  reviewAutomation()
+}
+
+// ─── Escrow automation: reminders and auto-approval ────────────────────────
+
+const hasFailedChecks = (s: SubmissionRow) => j<{ status: string }[]>(s.preflight, []).some(i => i.status === 'fail')
+const ageDays = (iso: string) => (Date.now() - new Date(iso).getTime()) / 86400_000
+
+/**
+ * Keeps money moving when a brand goes quiet:
+ *  - after REVIEW_REMINDER_DAYS, the brand is reminded once;
+ *  - after AUTO_APPROVE_DAYS, a video that passed every pre-flight check is approved automatically and the creator paid;
+ *    one with failed checks is never auto-approved — the brand is told it needs a decision instead.
+ */
+export function reviewAutomation() {
+  const { reviewReminderDays, autoApproveDays } = config.automation
+  for (const s of all<SubmissionRow>("SELECT * FROM submissions WHERE status = 'submitted' AND submitted_at IS NOT NULL")) {
+    const camp = one<CampaignRow>('SELECT * FROM campaigns WHERE id = ?', s.campaign_id)
+    if (!camp || camp.sourcing === 'contest') continue
+    const age = ageDays(s.submitted_at!)
+    if (autoApproveDays > 0 && age >= autoApproveDays) {
+      if (!hasFailedChecks(s)) {
+        try {
+          approve(s, camp, null, `Approved automatically after ${autoApproveDays} days without a review.`)
+          run('UPDATE submissions SET auto_approved = 1 WHERE id = ?', s.id)
+          notify(brandUsers(camp.brand_id), { title: 'Video approved automatically', body: `${camp.name}, video ${s.idx} passed every check and wasn’t reviewed within ${autoApproveDays} days, so the creator was paid.`, link: `/brand/reviews/${s.id}` })
+        } catch {
+          if (!s.escalated_at) {
+            run('UPDATE submissions SET escalated_at = ? WHERE id = ?', now(), s.id)
+            notify(brandUsers(camp.brand_id), { title: 'Top up to pay a creator', body: `${camp.name}, video ${s.idx} is ready to be approved but there aren’t enough funds in escrow or your wallet.`, link: '/brand/billing' })
+          }
+        }
+        continue
+      }
+      if (!s.escalated_at) {
+        run('UPDATE submissions SET escalated_at = ? WHERE id = ?', now(), s.id)
+        notify(brandUsers(camp.brand_id), { title: 'A video needs your decision', body: `${camp.name}, video ${s.idx} has failed checks, so it can’t be approved automatically. Approve, request changes or reject.`, link: `/brand/reviews/${s.id}` })
+      }
+      continue
+    }
+    if (reviewReminderDays > 0 && age >= reviewReminderDays && !s.reminded_at) {
+      run('UPDATE submissions SET reminded_at = ? WHERE id = ?', now(), s.id)
+      const auto = autoApproveDays > 0 && !hasFailedChecks(s) ? ` It will be approved automatically in ${Math.max(1, Math.ceil(autoApproveDays - age))} day(s) if you don’t review it.` : ''
+      notify(brandUsers(camp.brand_id), { title: 'A video is waiting for review', body: `${camp.name}, video ${s.idx}.${auto}`, link: `/brand/reviews/${s.id}` })
     }
   }
 }

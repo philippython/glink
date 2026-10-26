@@ -311,7 +311,8 @@ function Hypotheses({ color }: { color: string }) {
 }
 
 function Match({ color }: { color: string }) {
-  const rows = [[creators[0], 92], [creators[4], 89], [creators[2], 74]] as const
+  // Sample creators for the animation; skip any the sample data doesn't have.
+  const rows = ([[creators[0], 92], [creators[1], 89], [creators[2], 74]] as const).filter(([c]) => c)
   return (
     <div className="flex h-full flex-col justify-center gap-3">
       {rows.map(([c, v], n) => (

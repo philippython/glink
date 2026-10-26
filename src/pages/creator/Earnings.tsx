@@ -13,7 +13,7 @@ const meta: Record<Payment['status'], [string, Tone]> = {
 }
 
 export default function Earnings() {
-  const { state, withdraw, config, connectPayouts, syncPayouts, openPayoutDashboard } = useStore()
+  const { state, withdraw, config, connectPayouts, syncPayouts, openPayoutDashboard, setAutoPayout } = useStore()
   const toast = useToast()
   const t = useCreatorTotals()
   const [showAll, setShowAll] = useState(false)
@@ -75,6 +75,13 @@ export default function Earnings() {
           {account.ready
             ? <Button variant="secondary" loading={linking} onClick={() => void link(openPayoutDashboard)}><ExternalLink size={14} /> Manage bank details</Button>
             : <Button variant="brand" loading={linking} onClick={() => void link(connectPayouts)}>{account.connected ? 'Continue setup' : 'Set up payouts'}</Button>}
+          {account.ready && (
+            <label className="flex w-full items-center gap-3 border-t border-line pt-3 text-[13.5px] text-fg">
+              <input type="checkbox" checked={account.auto} onChange={e => void setAutoPayout(e.target.checked).then(() => toast(e.target.checked ? 'Automatic payouts on' : 'Automatic payouts off'), err => toast(errorMessage(err)))}
+                className="h-4 w-4 accent-[var(--coral)]" />
+              <span><b className="font-medium">Automatic payouts</b> <span className="text-muted">— send cleared earnings to my bank as soon as they reach $20.</span></span>
+            </label>
+          )}
         </Panel>
       )}
 

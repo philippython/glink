@@ -91,7 +91,7 @@ test('account.updated turns payouts on once transfers are active', async () => {
   await webhook(account('active'))
   assert.equal(one<{ payouts_enabled: number }>('SELECT payouts_enabled FROM creator_profiles WHERE id = ?', creatorId)!.payouts_enabled, 1)
   const state = await (await call('/api/state', { headers: { cookie: creatorCookie } })).json()
-  assert.deepEqual(state.payoutAccount, { connected: true, ready: true })
+  assert.deepEqual(state.payoutAccount, { connected: true, ready: true, auto: true })
 })
 
 test('withdrawing needs a connected payout account', async () => {

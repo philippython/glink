@@ -34,6 +34,12 @@ export const config = {
   stripe: env.STRIPE_SECRET_KEY
     ? { secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET ?? '', currency: (env.STRIPE_CURRENCY ?? 'usd').toLowerCase() }
     : null,
+  /** Escrow automation: remind brands to review, auto-approve clean videos, pay creators automatically. */
+  automation: {
+    reviewReminderDays: Number(env.REVIEW_REMINDER_DAYS ?? 2),
+    autoApproveDays: Number(env.AUTO_APPROVE_DAYS ?? 5), // 0 turns auto-approval off
+    autoPayoutMinCents: Math.round(Number(env.AUTO_PAYOUT_MIN ?? 20) * 100),
+  },
   /** Resend for outgoing email. Without it, email goes to the outbox table and the server log. */
   email: env.RESEND_API_KEY && env.EMAIL_FROM ? { apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM } : null,
 }

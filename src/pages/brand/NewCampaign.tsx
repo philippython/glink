@@ -1,13 +1,17 @@
 import { motion } from 'framer-motion'
-import { Lock, X } from 'lucide-react'
+import { Check, Lock, Search } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { OpportunityCard } from '../../components/OpportunityCard'
+import { TagPicker } from '../../components/TagPicker'
 import { SubmissionTimeline } from '../../components/ui'
 import {
   Button, ErrorBanner, Field, Input, KV, Label, ListEditor, PageHeader, Panel, Segmented, Select, useToast,
 } from '../../components/kit'
-import { CATEGORIES, COUNTRIES, type Campaign, type FieldErrors, type Goal, type Sourcing } from '../../data/market'
+import {
+  audienceSuggestions, BONUS_METRIC_KEYS, BONUS_METRICS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, GOAL_NAMES, GOALS, goalsFor,
+  type BonusMetric, type Campaign, type FieldErrors, type Goal, type Sourcing,
+} from '../../data/market'
 import { products as productCatalog, TODAY } from '../../data/seed'
 import { type CampaignDraft, useStore } from '../../data/store'
 import type { Milestone } from '../../data/types'
@@ -16,6 +20,7 @@ import { cx, fmtDate, money } from '../../lib/format'
 
 const STEPS = ['Basics', 'Creative brief', 'Budget and creators', 'Review and launch'] as const
 const ANGLES = ['Demonstration', 'Problem-solution', 'Testimonial', 'Unboxing']
+const WINDOWS = [7, 14, 21, 30, 45, 60, 90]
 
 const addDays = (iso: string, n: number) => {
   const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n)
@@ -38,30 +43,39 @@ export default function NewCampaign() {
   const [step, setStep] = useState(0)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
-  const [tcDraft, setTcDraft] = useState('')
+  const [catQuery, setCatQuery] = useState('')
+  const [allGoals, setAllGoals] = useState(false)
   const presetAngle = params.get('angle') ?? 'Demonstration'
 
   const [d, setD] = useState({
     name: '', product: '', category: '', market: state.brand.country, targetCustomers: [...state.brand.targetCustomers], deadline: addDays(TODAY, 14),
-    goal: 'Purchases' as Goal, angle: ANGLES.includes(presetAngle) ? presetAngle : 'custom', customAngle: ANGLES.includes(presetAngle) ? '' : presetAngle,
+    goal: '' as Goal | '', angle: ANGLES.includes(presetAngle) ? presetAngle : 'custom', customAngle: ANGLES.includes(presetAngle) ? '' : presetAngle,
     opening: params.get('opening') ?? '', storyFlow: ['Setup', 'Process', 'Result'], mustInclude: [] as string[], avoid: [] as string[],
     count: 2, aspectRatio: '9:16', minSec: 15, maxSec: 30, rawFootage: false,
-    sourcing: 'auto' as Sourcing, baseFee: 380, bonusAmount: 150, bonusRule: 'Beats your click-through benchmark within 14 days', benchmarkCtr: 1.8, creatorsWanted: 4,
+    sourcing: 'auto' as Sourcing, baseFee: 380, bonusAmount: 150, bonusMetric: 'ctr' as BonusMetric, bonusThreshold: 1.8, bonusWindowDays: 14, creatorsWanted: 4,
     prizes: [1500, 750, 400],
   })
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD(x => ({ ...x, [k]: v }))
 
   const contest = d.sourcing === 'contest'
+  const recommended = d.category ? goalsFor(d.category) : []
+  const goalOptions = allGoals ? GOAL_NAMES : recommended
+  const chooseCategory = (c: string) => setD(x => ({ ...x, category: c, goal: x.goal && goalsFor(c).includes(x.goal as Goal) ? x.goal : goalsFor(c)[0] }))
+  const chooseMetric = (m: BonusMetric) => setD(x => ({ ...x, bonusMetric: m, bonusThreshold: BONUS_METRICS[m].suggested }))
+  const bonusRuleText = describeBonus(d.bonusMetric, d.bonusThreshold, d.bonusWindowDays)
+  const suggestedName = d.product.trim() ? `${d.product.trim().split(' (')[0]} · ${d.goal || 'Campaign'}` : ''
+  const visibleCategories = CATEGORIES.filter(c => c.toLowerCase().includes(catQuery.trim().toLowerCase()))
   const draft: CampaignDraft = useMemo(() => ({
-    name: d.name.trim(), product: d.product.trim(), category: d.category, goal: d.goal, market: d.market, targetCustomers: d.targetCustomers,
+    name: d.name.trim() || suggestedName, product: d.product.trim(), category: d.category, goal: (d.goal || 'Purchases') as Goal, market: d.market, targetCustomers: d.targetCustomers,
     creativeAngle: d.angle === 'custom' ? d.customAngle.trim() : d.angle, suggestedOpening: d.opening.trim(), storyFlow: d.storyFlow,
     mustInclude: d.mustInclude, avoid: d.avoid,
     deliverables: { count: d.count, aspectRatio: d.aspectRatio, minSec: d.minSec, maxSec: d.maxSec, rawFootage: d.rawFootage },
     baseFee: contest ? 0 : d.baseFee, bonusAmount: contest ? 0 : d.bonusAmount,
-    bonusRule: contest ? `Prize pool: ${d.prizes.map(p => money(p)).join(' / ')}` : d.bonusRule,
-    benchmarkCtr: d.benchmarkCtr, prizes: contest ? d.prizes : [],
+    bonusRule: contest ? `Prize pool: ${d.prizes.map(p => money(p)).join(' / ')}` : describeBonus(d.bonusMetric, d.bonusThreshold, d.bonusWindowDays),
+    benchmarkCtr: d.bonusMetric === 'ctr' ? d.bonusThreshold : 1.8, bonusMetric: d.bonusMetric, bonusThreshold: d.bonusThreshold, bonusWindowDays: d.bonusWindowDays,
+    prizes: contest ? d.prizes : [],
     creatorsWanted: contest ? d.prizes.length : d.creatorsWanted, sourcing: d.sourcing, timeline: buildTimeline(d.deadline, d.sourcing),
-  }), [d, contest])
+  }), [d, contest, suggestedName])
 
   const budget = contest ? d.prizes.reduce((a, b) => a + b, 0) : d.baseFee * d.count * d.creatorsWanted
   const maxBonus = contest ? 0 : d.bonusAmount * d.count * d.creatorsWanted
@@ -69,9 +83,10 @@ export default function NewCampaign() {
   const validate = (s: number): FieldErrors => {
     const e: FieldErrors = {}
     if (s === 0) {
-      if (!d.name.trim()) e.name = 'Give the campaign a name.'
+      if (!d.category) e.category = 'Choose what you’re promoting — matching uses it to find creators.'
+      else if (!d.goal) e.goal = 'Choose what this campaign should achieve.'
+      if (!d.name.trim() && !suggestedName) e.name = 'Give the campaign a name.'
       if (!d.product.trim()) e.product = 'Say which product or service this is for.'
-      if (!d.category) e.category = 'Choose a category — matching uses it to find creators.'
       if (!d.market) e.market = 'Choose a market.'
       if (!d.targetCustomers.length) e.targetCustomers = 'Add at least one target customer.'
       if (!d.deadline || d.deadline <= addDays(TODAY, 4)) e.deadline = `Pick a deadline after ${fmtDate(addDays(TODAY, 4))} so creators have time for a draft.`
@@ -86,6 +101,8 @@ export default function NewCampaign() {
     if (s === 2 && !contest) {
       if (d.baseFee < 50) e.baseFee = 'Base fee must be at least $50.'
       if (d.creatorsWanted < 1) e.creatorsWanted = 'You need at least one creator.'
+      if (d.bonusAmount > 0 && !(d.bonusThreshold > 0)) e.bonusThreshold = 'Enter the result that earns the bonus.'
+      if (!(d.bonusWindowDays >= 1 && d.bonusWindowDays <= 90)) e.bonusWindowDays = 'Choose a window between 1 and 90 days.'
       if (budget + maxBonus > state.wallet) e.wallet = `This needs ${money(budget + maxBonus)} in escrow (fees plus maximum bonuses) but your wallet has ${money(state.wallet)}. Lower the budget or add funds in Billing.`
     }
     return e
@@ -99,7 +116,7 @@ export default function NewCampaign() {
   }
 
   // Which step owns each server-side field, so errors send you back to the right place.
-  const stepOf = (field: string) => (['name', 'product', 'category', 'market', 'targetCustomers', 'deadline', 'timeline'].some(f => field.startsWith(f)) ? 0
+  const stepOf = (field: string) => (['name', 'product', 'category', 'goal', 'market', 'targetCustomers', 'deadline', 'timeline'].some(f => field.startsWith(f)) ? 0
     : ['creativeAngle', 'suggestedOpening', 'storyFlow', 'mustInclude', 'avoid', 'deliverables'].some(f => field.startsWith(f)) ? 1 : 2)
 
   const launch = async () => {
@@ -118,7 +135,6 @@ export default function NewCampaign() {
     } finally { setBusy(false) }
   }
 
-  const addTc = () => { const v = tcDraft.trim(); if (v && !d.targetCustomers.includes(v)) set('targetCustomers', [...d.targetCustomers, v]); setTcDraft('') }
   const previewCampaign = { ...draft, id: 'preview', brandId: state.brand.id, brandName: state.brand.name, status: 'draft', createdAt: TODAY, deadline: d.deadline } as Campaign
 
   return (
@@ -143,50 +159,88 @@ export default function NewCampaign() {
         <form onSubmit={next} noValidate>
           <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2 }}>
             <Panel className="space-y-5">
-              {Object.keys(errors).length > 0 && <ErrorBanner>{errors.wallet ?? 'Please fix the highlighted fields before continuing.'}{!errors.wallet && Object.keys(errors).some(k => !['name', 'product', 'category', 'market', 'targetCustomers', 'deadline', 'angle', 'opening', 'storyFlow', 'length', 'baseFee', 'creatorsWanted'].includes(k)) && <div className="mt-1">{Object.values(errors).join(' ')}</div>}</ErrorBanner>}
+              {Object.keys(errors).length > 0 && <ErrorBanner>{errors.wallet ?? 'Please fix the highlighted fields before continuing.'}{!errors.wallet && Object.keys(errors).some(k => !['name', 'product', 'category', 'goal', 'market', 'targetCustomers', 'deadline', 'angle', 'opening', 'storyFlow', 'length', 'baseFee', 'creatorsWanted', 'bonusThreshold', 'bonusWindowDays'].includes(k)) && <div className="mt-1">{Object.values(errors).join(' ')}</div>}</ErrorBanner>}
               {!state.permissions.canSpend && <ErrorBanner>Reviewers can’t launch campaigns. Ask your brand owner or a manager.</ErrorBanner>}
 
               {step === 0 && (
                 <>
-                  <Field label="Campaign name" htmlFor="name" error={errors.name}><Input id="name" value={d.name} onChange={e => set('name', e.target.value)} invalid={!!errors.name} placeholder="e.g. 14-day barrier reset" /></Field>
-                  <Field label="Product or service" htmlFor="product" error={errors.product} hint="Pick one you’ve analysed, or type a new one.">
-                    <Input id="product" list="product-list" value={d.product} onChange={e => set('product', e.target.value)} invalid={!!errors.product} />
-                    <datalist id="product-list">{productCatalog.map(p => <option key={p.id} value={`${p.name} (${p.category.toLowerCase()})`} />)}</datalist>
-                  </Field>
-                  <Field label="Category" htmlFor="category" error={errors.category} hint="Used to match creators with proven work in this area.">
-                    <Select id="category" value={d.category} onChange={e => set('category', e.target.value)} invalid={!!errors.category}>
-                      <option value="">Choose a category</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                    </Select>
-                  </Field>
-                  <Field label="Market" htmlFor="market" error={errors.market}>
-                    <Select id="market" value={d.market} onChange={e => set('market', e.target.value)} invalid={!!errors.market}>
-                      <option value="">Choose a country</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
-                    </Select>
-                  </Field>
-                  <Field label="Target customer" htmlFor="tc" error={errors.targetCustomers} hint="Press Enter to add each one.">
-                    <div className={cx('flex flex-wrap items-center gap-1.5 rounded-lg border bg-surface px-2 py-1.5', errors.targetCustomers ? 'border-danger' : 'border-line-strong')}>
-                      {d.targetCustomers.map(t => (
-                        <span key={t} className="inline-flex items-center gap-1 rounded-full bg-subtle px-2.5 py-0.5 text-[12.5px] text-fg">
-                          {t}<button type="button" onClick={() => set('targetCustomers', d.targetCustomers.filter(x => x !== t))} aria-label={`Remove ${t}`} className="text-faint hover:text-fg"><X size={12} /></button>
-                        </span>
-                      ))}
-                      <input id="tc" value={tcDraft} onChange={e => setTcDraft(e.target.value)} onBlur={addTc}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTc() } }}
-                        className="h-7 min-w-[140px] flex-1 bg-transparent px-1 text-[14px] text-fg outline-none placeholder:text-faint" placeholder="Add a customer type" />
+                  {/* 1 — What are you promoting? */}
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                      <div><div className="text-[14px] font-medium text-fg">What are you promoting?</div><div className="text-[12.5px] text-muted">Matching uses this to find creators with proven work in the area.</div></div>
+                      <label className="flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-2.5 text-[13px] focus-within:border-violet">
+                        <Search size={13} className="text-faint" /><input value={catQuery} onChange={e => setCatQuery(e.target.value)} placeholder="Search categories" aria-label="Search categories" className="w-36 bg-transparent outline-none placeholder:text-faint" />
+                      </label>
                     </div>
-                  </Field>
-                  <Field label="Submission deadline" htmlFor="deadline" error={errors.deadline} hint="Creators submit their final video by this date.">
-                    <Input id="deadline" type="date" value={d.deadline} min={addDays(TODAY, 5)} onChange={e => set('deadline', e.target.value)} invalid={!!errors.deadline} className="max-w-[220px]" />
-                  </Field>
-                  {draft.timeline.length > 0 && (
-                    <div className="rounded-xl border border-line px-4 pb-2 pt-5"><SubmissionTimeline key={d.deadline + d.sourcing} milestones={draft.timeline} /></div>
+                    <div id="category" className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Category">
+                      {visibleCategories.map(c => (
+                        <button key={c} type="button" role="radio" aria-checked={d.category === c} onClick={() => chooseCategory(c)}
+                          className={cx('h-8 rounded-full border px-3 text-[13px] transition', d.category === c ? 'border-violet bg-violet font-medium text-pure-white' : 'border-line-strong bg-surface text-fg hover:border-violet')}>
+                          {c}
+                        </button>
+                      ))}
+                      {!visibleCategories.length && <span className="text-[13px] text-faint">No category matches “{catQuery}”.</span>}
+                    </div>
+                    {errors.category && <p className="mt-1.5 text-[12.5px] text-danger">{errors.category}</p>}
+                  </div>
+
+                  {/* 2 — What should it achieve? (depends on the category) */}
+                  {d.category && (
+                    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+                      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                        <div><div className="text-[14px] font-medium text-fg">What should it achieve?</div><div className="text-[12.5px] text-muted">{allGoals ? 'Every goal' : `Goals that work best for ${d.category}`}. This decides which creator strengths count most.</div></div>
+                        <button type="button" onClick={() => setAllGoals(v => !v)} className="text-[12.5px] font-medium text-violet hover:underline">{allGoals ? `Show ${d.category} goals` : 'Show all goals'}</button>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Goal">
+                        {goalOptions.map(g => (
+                          <button key={g} type="button" role="radio" aria-checked={d.goal === g} onClick={() => set('goal', g)}
+                            className={cx('relative rounded-xl border p-3 text-left transition', d.goal === g ? 'border-violet bg-tint-violet' : 'border-line-strong bg-surface hover:border-violet')}>
+                            {d.goal === g && <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-violet text-pure-white"><Check size={12} strokeWidth={3} /></span>}
+                            {!allGoals && recommended[0] === g && <span className="mb-1 inline-block rounded-full bg-lime px-1.5 py-px text-[10px] font-semibold text-pure-black">Top pick</span>}
+                            <div className="pr-6 text-[13.5px] font-medium text-fg">{g}</div>
+                            <div className="mt-0.5 text-[12px] leading-snug text-muted">{GOALS[g].hint}</div>
+                          </button>
+                        ))}
+                      </div>
+                      {errors.goal && <p className="mt-1.5 text-[12.5px] text-danger">{errors.goal}</p>}
+                    </motion.div>
+                  )}
+
+                  {/* 3 — The details */}
+                  {d.goal && (
+                    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5 border-t border-line pt-5">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Product or service" htmlFor="product" error={errors.product} hint="Pick one you’ve analysed, or type a new one.">
+                          <Input id="product" list="product-list" value={d.product} onChange={e => set('product', e.target.value)} invalid={!!errors.product} placeholder={`e.g. your ${d.category.toLowerCase()} product`} />
+                          <datalist id="product-list">{productCatalog.map(p => <option key={p.id} value={`${p.name} (${p.category.toLowerCase()})`} />)}</datalist>
+                        </Field>
+                        <Field label="Campaign name" htmlFor="name" error={errors.name} hint={suggestedName ? 'Leave blank to use the suggestion.' : undefined}>
+                          <Input id="name" value={d.name} onChange={e => set('name', e.target.value)} invalid={!!errors.name} placeholder={suggestedName || 'e.g. Spring launch'} />
+                        </Field>
+                      </div>
+                      <Field label="Market" htmlFor="market" error={errors.market} hint="Where the ads will run. Type to jump to a country.">
+                        <Select id="market" value={d.market} onChange={e => set('market', e.target.value)} invalid={!!errors.market}>
+                          <option value="">Choose a country</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label="Target customers" htmlFor="tc" error={errors.targetCustomers} hint="Search the list or type your own and press Enter.">
+                        <TagPicker id="tc" value={d.targetCustomers} onChange={v => set('targetCustomers', v)} suggestions={audienceSuggestions(d.category)}
+                          quick={CATEGORY_INFO[d.category]?.customers ?? []} quickLabel={`Popular for ${d.category}`} invalid={!!errors.targetCustomers} />
+                      </Field>
+                      <Field label="Submission deadline" htmlFor="deadline" error={errors.deadline} hint="Creators submit their final video by this date.">
+                        <Input id="deadline" type="date" value={d.deadline} min={addDays(TODAY, 5)} onChange={e => set('deadline', e.target.value)} invalid={!!errors.deadline} className="max-w-[220px]" />
+                      </Field>
+                      {draft.timeline.length > 0 && (
+                        <div className="rounded-xl border border-line px-4 pb-2 pt-5"><SubmissionTimeline key={d.deadline + d.sourcing} milestones={draft.timeline} /></div>
+                      )}
+                    </motion.div>
                   )}
                 </>
               )}
 
               {step === 1 && (
                 <>
-                  <Field label="Goal"><Segmented value={d.goal} onChange={v => set('goal', v)} options={(['Purchases', 'Sign-ups', 'Content testing', 'Awareness'] as const).map(g => ({ value: g, label: g }))} /></Field>
+                  <div className="flex flex-wrap gap-2 text-[12.5px]"><span className="rounded-full bg-subtle px-2.5 py-1 text-muted">{d.category}</span><span className="rounded-full bg-tint-violet px-2.5 py-1 text-fg">Goal: {d.goal}</span></div>
                   <Field label="Creative angle" error={errors.angle}>
                     <Segmented value={d.angle} onChange={v => set('angle', v)} options={[...ANGLES.map(a => ({ value: a, label: a }))]} />
                     <div className="flex items-center gap-2 pt-1">
@@ -242,14 +296,31 @@ export default function NewCampaign() {
                         <Field label="Base fee per video" htmlFor="fee" error={errors.baseFee}><Input id="fee" type="number" min={0} value={d.baseFee} onChange={e => set('baseFee', +e.target.value)} invalid={!!errors.baseFee} /></Field>
                         <Field label="Performance bonus per video" htmlFor="bonus"><Input id="bonus" type="number" min={0} value={d.bonusAmount} onChange={e => set('bonusAmount', +e.target.value)} /></Field>
                       </div>
-                      <Field label="Bonus is paid when the video…" htmlFor="rule">
-                        <Select id="rule" value={d.bonusRule} onChange={e => set('bonusRule', e.target.value)}>
-                          {['Beats your click-through benchmark within 14 days', 'Beats your cost-per-purchase benchmark within 14 days', 'Reaches 100,000 views within 30 days'].map(r => <option key={r}>{r}</option>)}
-                        </Select>
-                      </Field>
-                      <Field label="Click-through benchmark (%)" htmlFor="ctr" hint="A creative that beats this within 14 days counts as winning and earns its bonus.">
-                        <Input id="ctr" type="number" step="0.1" min={0.1} value={d.benchmarkCtr} onChange={e => set('benchmarkCtr', +e.target.value)} className="max-w-[140px]" />
-                      </Field>
+                      <div className="rounded-xl border border-line p-4">
+                        <div className="text-[14px] font-medium text-fg">When is the bonus paid?</div>
+                        <div className="mb-3 text-[12.5px] text-muted">Pick the result that matters, set your own threshold and how long the ad has to hit it.</div>
+                        <div className="grid gap-4 sm:grid-cols-[1.4fr_1fr_1fr]">
+                          <Field label="Result" htmlFor="metric">
+                            <Select id="metric" value={d.bonusMetric} onChange={e => chooseMetric(e.target.value as BonusMetric)}>
+                              {BONUS_METRIC_KEYS.map(k => <option key={k} value={k}>{BONUS_METRICS[k].label}</option>)}
+                            </Select>
+                          </Field>
+                          <Field label={BONUS_METRICS[d.bonusMetric].better === 'higher' ? 'Above' : 'Below'} htmlFor="threshold" error={errors.bonusThreshold}>
+                            <div className="relative">
+                              {BONUS_METRICS[d.bonusMetric].unit === '$' && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-muted">$</span>}
+                              <Input id="threshold" type="number" step="0.1" min={0.1} value={d.bonusThreshold} onChange={e => set('bonusThreshold', +e.target.value)} invalid={!!errors.bonusThreshold}
+                                className={BONUS_METRICS[d.bonusMetric].unit === '$' ? 'pl-7' : 'pr-8'} />
+                              {BONUS_METRICS[d.bonusMetric].unit === '%' && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[14px] text-muted">%</span>}
+                            </div>
+                          </Field>
+                          <Field label="Within" htmlFor="window" error={errors.bonusWindowDays}>
+                            <Select id="window" value={d.bonusWindowDays} onChange={e => set('bonusWindowDays', +e.target.value)}>
+                              {WINDOWS.map(w => <option key={w} value={w}>{w} days</option>)}
+                            </Select>
+                          </Field>
+                        </div>
+                        <p className="mt-3 rounded-lg bg-tint-violet px-3 py-2 text-[13px] text-fg">Bonus of {money(d.bonusAmount)} when: <b>{bonusRuleText}</b> of approval.</p>
+                      </div>
                       <Field label="Creators wanted" htmlFor="wanted" error={errors.creatorsWanted}><Input id="wanted" type="number" min={1} max={20} value={d.creatorsWanted} onChange={e => set('creatorsWanted', +e.target.value)} className="max-w-[140px]" invalid={!!errors.creatorsWanted} /></Field>
                     </>
                   )}
@@ -280,7 +351,7 @@ export default function NewCampaign() {
                     <Label className="mb-2">Budget and creators</Label>
                     <KV label="Sourcing">{d.sourcing === 'auto' ? 'Auto-match' : d.sourcing === 'handpick' ? 'Hand-pick' : 'Contest'}</KV>
                     <KV label="Budget">{money(budget)}{!contest && ` + up to ${money(maxBonus)} in bonuses`}</KV>
-                    {!contest && <KV label="Bonus rule">{draft.bonusRule}</KV>}
+                    {!contest && <KV label="Bonus rule">{bonusRuleText} of approval</KV>}
                   </div>
                   <div className="rounded-xl border border-line px-4 pb-2 pt-5"><SubmissionTimeline milestones={draft.timeline} /></div>
                   <p className="flex items-start gap-2 text-[13px] text-muted"><Lock size={14} className="mt-0.5 shrink-0" />

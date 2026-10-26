@@ -9,6 +9,7 @@ import { config } from './config.ts'
 import { all, one, run, tx } from './db.ts'
 import { creditTopUp } from './domain.ts'
 import { brandUsers, creatorUser, emit, notify } from './events.ts'
+import { COUNTRY_CODE } from './taxonomy.ts'
 import { HttpError, id, now, toCents } from './util.ts'
 
 let client: Stripe | null = null
@@ -60,10 +61,7 @@ function creditSession(s: Stripe.Checkout.Session) {
 
 // ─── Creator payout accounts ────────────────────────────────────────────────
 
-const ISO: Record<string, string> = {
-  'United States': 'US', 'United Kingdom': 'GB', Canada: 'CA', Australia: 'AU', Nigeria: 'NG', Ghana: 'GH', Kenya: 'KE',
-  'South Africa': 'ZA', Germany: 'DE', France: 'FR', Spain: 'ES', Portugal: 'PT', India: 'IN',
-}
+const ISO = COUNTRY_CODE
 
 type PayoutProfile = { id: string; user_id: string; country: string; stripe_account_id: string | null; payouts_enabled: number }
 const profile = (creatorId: string) => one<PayoutProfile>('SELECT id, user_id, country, stripe_account_id, payouts_enabled FROM creator_profiles WHERE id = ?', creatorId)!
@@ -151,6 +149,27 @@ export async function withdrawToBank(creatorId: string) {
     return total
   } finally {
     inFlight.delete(creatorId)
+  }
+}
+
+/**
+ * Automatic payouts: creators with a ready payout account (and auto-payout on) are paid as soon as their
+ * available balance reaches AUTO_PAYOUT_MIN. Runs from the background loop; failures are logged and retried next run.
+ */
+export async function runAutoPayouts() {
+  if (!config.stripe) return
+  const due = all<{ id: string; total: number }>(
+    `SELECT p.id, SUM(pay.amount) total FROM creator_profiles p JOIN payments pay ON pay.creator_id = p.id AND pay.status = 'available'
+     WHERE p.payouts_enabled = 1 AND p.auto_payout = 1 GROUP BY p.id HAVING total >= ?`, config.automation.autoPayoutMinCents)
+  for (const c of due) {
+    if (inFlight.has(c.id)) continue
+    try {
+      const amount = await withdrawToBank(c.id)
+      notify(creatorUser(c.id), { title: 'Payout sent', body: `${dollars(amount)} is on its way to your bank.`, link: '/creator/earnings' })
+      emit(creatorUser(c.id))
+    } catch (e) {
+      console.error(`[auto-payout] ${c.id}: ${(e as Error).message}`)
+    }
   }
 }
 

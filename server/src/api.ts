@@ -18,6 +18,7 @@ import {
 } from './domain.ts'
 import { brandUsers, creatorUser, emit, notify, sendEmail, subscribe } from './events.ts'
 import { CATEGORIES, rankCreators } from './matching.ts'
+import { BONUS_METRIC_KEYS, COUNTRIES, describeBonus, GOAL_NAMES } from './taxonomy.ts'
 import { availablePayments, createTopUpCheckout, payoutDashboardLink, payoutOnboardingLink, recordPayout, syncPayoutAccount, withdrawToBank } from './payments.ts'
 import { briefMatch, formatChecks, issueCount, scriptChecks } from './preflight.ts'
 import { seedForNewBrand, seedForNewCreator } from './seed.ts'
@@ -59,7 +60,7 @@ function submissionForCreator(subId: string, creatorId: string) {
 }
 const touchBrandAndCreator = (brandId: string, creatorId: string) => emit([...brandUsers(brandId), ...creatorUser(creatorId)])
 const list = (min: number, msg: string) => z.array(z.string().trim().min(1).max(120)).min(min, msg)
-const Country = z.string().min(2, 'Choose a country.')
+const Country = z.string({ error: 'Choose a country.' }).refine(c => COUNTRIES.includes(c), 'Choose a country from the list.')
 
 // ─── State + realtime ───────────────────────────────────────────────────────
 
@@ -176,7 +177,7 @@ const CampaignInputSchema = z.object({
   name: z.string().trim().min(1, 'Give the campaign a name.').max(100),
   product: z.string().trim().min(1, 'Say which product or service this is for.').max(160),
   category: z.enum(CATEGORIES as [string, ...string[]], { error: 'Choose a category.' }),
-  goal: z.enum(['Purchases', 'Sign-ups', 'Content testing', 'Awareness']),
+  goal: z.enum(GOAL_NAMES as [string, ...string[]], { error: 'Choose a goal.' }),
   market: Country,
   targetCustomers: list(1, 'Add at least one target customer.'),
   creativeAngle: z.string().trim().min(2, 'Choose a creative angle.').max(60),
@@ -190,6 +191,9 @@ const CampaignInputSchema = z.object({
   bonusAmount: z.number().min(0).max(100_000),
   bonusRule: z.string().max(200),
   benchmarkCtr: z.number().min(0.1).max(20).default(1.8),
+  bonusMetric: z.enum(BONUS_METRIC_KEYS as [string, ...string[]]).default('ctr'),
+  bonusThreshold: z.number({ error: 'Enter a bonus threshold.' }).positive('The bonus threshold must be above zero.').max(100_000).optional(),
+  bonusWindowDays: z.number().int().min(1, 'The bonus window is at least 1 day.').max(90, 'The bonus window is at most 90 days.').default(14),
   creatorsWanted: z.number().int().min(1).max(50),
   sourcing: z.enum(['auto', 'handpick', 'contest']),
   prizes: z.array(z.number().min(0)).max(5).default([]),
@@ -202,17 +206,22 @@ api.post('/campaigns', async c => {
   const m = brandOf(user, 'spend')
   const d = parse(CampaignInputSchema, await c.req.json())
   const deadline = d.timeline.find(t => t.deadline)!.date
+  const threshold = d.bonusThreshold ?? (d.bonusMetric === 'ctr' ? d.benchmarkCtr : NaN)
+  if (d.sourcing !== 'contest' && !(threshold > 0)) throw new HttpError(422, 'Please fix the highlighted fields.', { bonusThreshold: 'Enter a bonus threshold.' })
   if (deadline <= new Date().toISOString().slice(0, 10)) throw new HttpError(422, 'Please fix the highlighted fields.', { deadline: 'The submission deadline must be in the future.' })
   const campId = id('cmp')
   tx(() => {
     run(`INSERT INTO campaigns (id, brand_id, name, product, category, goal, market, target_customers, creative_angle, suggested_opening, story_flow, must_include, avoid,
-      deliverables, base_fee, bonus_amount, bonus_rule, benchmark_ctr, creators_wanted, sourcing, prizes, timeline, status, created_by, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      deliverables, base_fee, bonus_amount, bonus_rule, benchmark_ctr, creators_wanted, sourcing, prizes, timeline, status, created_by, created_at,
+      bonus_metric, bonus_threshold, bonus_window_days)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     campId, m.brand_id, d.name, d.product, d.category, d.goal, d.market, JSON.stringify(d.targetCustomers), d.creativeAngle, d.suggestedOpening,
     JSON.stringify(d.storyFlow), JSON.stringify(d.mustInclude), JSON.stringify(d.avoid), JSON.stringify(d.deliverables),
-    d.sourcing === 'contest' ? 0 : toCents(d.baseFee), d.sourcing === 'contest' ? 0 : toCents(d.bonusAmount), d.bonusRule, d.benchmarkCtr,
+    d.sourcing === 'contest' ? 0 : toCents(d.baseFee), d.sourcing === 'contest' ? 0 : toCents(d.bonusAmount),
+    d.sourcing === 'contest' ? d.bonusRule : describeBonus(d.bonusMetric as never, threshold, d.bonusWindowDays), d.bonusMetric === 'ctr' ? threshold : d.benchmarkCtr,
     d.sourcing === 'contest' ? Math.max(1, d.prizes.filter(p => p > 0).length) : d.creatorsWanted, d.sourcing,
-    JSON.stringify(d.prizes.filter(p => p > 0).map(toCents)), JSON.stringify(d.timeline), 'live', user.id, now())
+    JSON.stringify(d.prizes.filter(p => p > 0).map(toCents)), JSON.stringify(d.timeline), 'live', user.id, now(),
+    d.bonusMetric, threshold, d.bonusWindowDays)
     const camp = one<CampaignRow>('SELECT * FROM campaigns WHERE id = ?', campId)!
     const budget = budgetOf(camp)
     const balance = walletBalance(m.brand_id)
@@ -553,4 +562,9 @@ api.post('/payouts/connect', async c => {
   return c.json({ url: await payoutOnboardingLink(creatorOf(user).id, user.email) })
 })
 api.post('/payouts/sync', async c => c.json({ ready: await syncPayoutAccount(creatorOf(c.get('user')).id) }))
+api.post('/payouts/settings', async c => {
+  const { auto } = parse(z.object({ auto: z.boolean() }), await c.req.json())
+  run('UPDATE creator_profiles SET auto_payout = ? WHERE id = ?', auto ? 1 : 0, creatorOf(c.get('user')).id)
+  return c.json({ ok: true })
+})
 api.post('/payouts/dashboard', async c => c.json({ url: await payoutDashboardLink(creatorOf(c.get('user')).id) }))

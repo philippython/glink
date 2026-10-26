@@ -65,7 +65,7 @@ src/data/store.tsx   client store: calls the API, refetches on server push
 
 ## What isn’t connected yet
 
-Card payments (Stripe) and email (Resend) are built in and switch on when their keys are set. Without them, “Add test funds” and recorded withdrawals keep working for testing, and emails go to the console and the `outbox` table (`GET /api/dev/outbox` in development). Setup steps: `docs/DEPLOYMENT.md`, section 9.
+Card payments (Stripe) and email (Resend) are built in and switch on when their keys are set. Escrow is automated — review reminders, auto-approval of clean videos, clearance and automatic payouts; see `docs/ESCROW.md`. Without them, “Add test funds” and recorded withdrawals keep working for testing, and emails go to the console and the `outbox` table (`GET /api/dev/outbox` in development). Setup steps: `docs/DEPLOYMENT.md`, section 9.
 
 - **Ad-platform results.** Brands enter results on the Performance page; importing from Meta / TikTok ad accounts is the next integration.
 - **Social verification.** Channel follower counts are self-reported until platform OAuth is added.

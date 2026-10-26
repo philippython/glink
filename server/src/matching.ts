@@ -6,7 +6,8 @@
 // produces a human-readable reason; the strongest ones are shown to brands
 // ("Why this match") and creators ("Why you were matched").
 
-export type Goal = 'Purchases' | 'Sign-ups' | 'Content testing' | 'Awareness'
+import { CATEGORIES as ALL_CATEGORIES, CATEGORY_INFO, COUNTRY_REGION, ENGLISH_SPEAKING, GOALS, type Goal } from './taxonomy.ts'
+export type { Goal }
 export interface Strengths { hook: number; retention: number; conversion: number; reliability: number }
 
 /** One finished creative the creator made, used to learn their real strengths. */
@@ -48,15 +49,10 @@ export interface MatchResult { creatorId: string; score: number; factors: Factor
 
 // ─── Reference data ─────────────────────────────────────────────────────────
 
-export const CATEGORIES = ['Skincare', 'Beauty', 'Wellness', 'Fitness', 'Food & Bev', 'Technology', 'Finance', 'Pets', 'Fashion', 'Home', 'Parenting', 'Gaming', 'Travel']
+export const CATEGORIES = ALL_CATEGORIES
 
 /** Neighbouring categories share audiences and on-camera skills. */
-const RELATED: Record<string, string[]> = {
-  Skincare: ['Beauty', 'Wellness'], Beauty: ['Skincare', 'Fashion'], Wellness: ['Fitness', 'Skincare', 'Food & Bev'],
-  Fitness: ['Wellness', 'Food & Bev'], 'Food & Bev': ['Wellness', 'Home'], Technology: ['Gaming', 'Finance'],
-  Finance: ['Technology'], Pets: ['Home', 'Parenting'], Fashion: ['Beauty'], Home: ['Parenting', 'Food & Bev', 'Pets'],
-  Parenting: ['Home', 'Pets'], Gaming: ['Technology'], Travel: ['Food & Bev', 'Fashion'],
-}
+const RELATED: Record<string, string[]> = Object.fromEntries(Object.entries(CATEGORY_INFO).map(([k, v]) => [k, v.related]))
 
 /** Which proven styles suit each creative angle. */
 const ANGLE_STYLES: Record<string, string[]> = {
@@ -67,18 +63,11 @@ const ANGLE_STYLES: Record<string, string[]> = {
 }
 
 /** How much each strength matters for each campaign goal (rows sum to 1). */
-export const GOAL_WEIGHTS: Record<Goal, { hook: number; retention: number; conversion: number }> = {
-  Purchases: { hook: 0.25, retention: 0.25, conversion: 0.5 },
-  'Sign-ups': { hook: 0.25, retention: 0.35, conversion: 0.4 },
-  'Content testing': { hook: 0.4, retention: 0.4, conversion: 0.2 },
-  Awareness: { hook: 0.55, retention: 0.35, conversion: 0.1 },
-}
+export const GOAL_WEIGHTS = Object.fromEntries(Object.entries(GOALS).map(([g, w]) => [g, { hook: w.hook, retention: w.retention, conversion: w.conversion }])) as
+  Record<Goal, { hook: number; retention: number; conversion: number }>
 
-const REGIONS: Record<string, string> = {
-  'United States': 'NA', Canada: 'NA', 'United Kingdom': 'EU', Germany: 'EU', France: 'EU', Spain: 'EU', Portugal: 'EU',
-  Nigeria: 'AF', 'South Africa': 'AF', Ghana: 'AF', Kenya: 'AF', Australia: 'OC', India: 'AS',
-}
-const ENGLISH = new Set(['United States', 'Canada', 'United Kingdom', 'Australia', 'Nigeria', 'South Africa', 'Ghana', 'Kenya', 'India'])
+const REGIONS: Record<string, string> = COUNTRY_REGION
+const ENGLISH = ENGLISH_SPEAKING
 
 export const WEIGHTS = {
   category: 0.22, strengths: 0.24, style: 0.12, reliability: 0.12, market: 0.1, budget: 0.1, evidence: 0.06, affinity: 0.04,

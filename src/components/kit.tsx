@@ -272,6 +272,18 @@ export function ThemeSwitch() {
   )
 }
 
+/** One-button light/dark toggle for tight spaces such as the landing-page bar. */
+export function ThemeToggle() {
+  const { theme, setPref } = useTheme()
+  const next = theme === 'dark' ? 'light' : 'dark'
+  return (
+    <button onClick={() => setPref(next)} aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}
+      className="grid h-9 w-9 place-items-center rounded-lg text-muted transition hover:bg-subtle hover:text-fg">
+      {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+    </button>
+  )
+}
+
 // ─── Toasts ─────────────────────────────────────────────────────────────────
 
 const ToastCtx = createContext<(msg: string) => void>(() => {})

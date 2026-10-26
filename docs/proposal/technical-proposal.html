@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glink — Technical proposal</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 16mm 16mm 17mm }
+  :root {
+    --ink: #161615; --ink2: #3d3d3a; --muted: #5f5f5b; --faint: #9a9a96; --line: #e7e6e2; --subtle: #f7f6f3;
+    --coral: #ff5a36; --rose: #f2367a; --violet: #6e4cff; --aqua: #1baf7a; --amber: #eda100; --lime: #b5e61d;
+    --t-coral: #fff1ec; --t-rose: #ffeef5; --t-violet: #f2efff; --t-aqua: #e8f7f1; --t-lime: #f4fadc;
+    --grad: linear-gradient(115deg, var(--coral), var(--rose) 48%, var(--violet));
+  }
+  * { box-sizing: border-box }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  body { margin: 0; font: 8.9pt/1.5 Inter, Arial, sans-serif; color: var(--ink) }
+  .page { break-after: page; position: relative }
+  .page:last-child { break-after: auto }
+  h1, h2, h3 { font-family: Newsreader, Georgia, serif; font-weight: 400; letter-spacing: -.015em; margin: 0 }
+  h2 { font-size: 22pt; line-height: 1.08; margin-bottom: 2.5mm }
+  h3 { font-size: 12pt; margin: 4.5mm 0 1.5mm }
+  p { margin: 0 0 2.4mm }
+  .kicker { font-size: 7.2pt; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rose); margin-bottom: 2mm }
+  .lede { font-size: 10.2pt; color: var(--muted); margin-bottom: 4mm; max-width: 165mm }
+  .gradwrap { display: inline-block; overflow: hidden; vertical-align: bottom; padding: 0 .1em; margin: 0 -.1em }
+  .grad { display: inline-block; padding: 0 .35em; margin: 0 -.35em; color: transparent; -webkit-background-clip: text; background-clip: text; background-image: var(--grad) }
+  code, .mono { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 7.8pt; background: #f2f2ef; padding: .1mm .8mm; border-radius: .7mm }
+  table { width: 100%; border-collapse: collapse; font-size: 8.4pt; margin: 1mm 0 3.5mm }
+  th { text-align: left; font-size: 6.8pt; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding: 0 2.5mm 1.6mm 0; border-bottom: 1px solid #d9d8d3 }
+  td { padding: 1.8mm 2.5mm 1.8mm 0; border-bottom: 1px solid var(--line); vertical-align: top }
+  tr { break-inside: avoid }
+  td.k { font-weight: 600; white-space: nowrap }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.5mm }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm }
+  .card { border: 1px solid var(--line); border-radius: 3.5mm; padding: 3.8mm; break-inside: avoid; background: #fff }
+  .card h4 { margin: 0 0 1.2mm; font-size: 9.2pt; font-weight: 600 }
+  .card p { color: var(--muted); margin: 0 }
+  .note { background: var(--subtle); border-radius: 2.5mm; padding: 3mm 4mm; font-size: 8.4pt; color: var(--muted); break-inside: avoid; margin-bottom: 3mm }
+  .note b { color: var(--ink) }
+  .figure { border: 1px solid var(--line); border-radius: 3.5mm; padding: 4mm 4.5mm 3mm; margin: 1mm 0 3.5mm; break-inside: avoid }
+  .figure .ft { font-size: 9pt; font-weight: 600; margin-bottom: .6mm }
+  .figure .fs { font-size: 7.8pt; color: var(--muted); margin-bottom: 3mm }
+  .figure .src { font-size: 7.2pt; color: var(--faint); margin-top: 2mm }
+  ul.ticks { list-style: none; padding: 0; margin: 0 0 2mm }
+  ul.ticks li { position: relative; padding-left: 5mm; margin: 0 0 1.4mm }
+  ul.ticks li::before { content: ''; position: absolute; left: .6mm; top: 1.5mm; width: 2.2mm; height: 2.2mm; border-radius: 50%; background: var(--dot, var(--violet)) }
+  .tile { border: 1px solid var(--line); border-radius: 3.5mm; padding: 3.5mm 4mm }
+  .tile .lab { font-size: 7.6pt; color: var(--muted) }
+  .tile .val { font-size: 20pt; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; margin: .5mm 0 }
+  .tile .sub { font-size: 7.4pt; color: var(--faint) }
+  .pill { display: inline-block; border-radius: 99px; padding: .3mm 2.2mm; font-size: 7pt; font-weight: 600 }
+  .p-done { background: #eaf6ee; color: #17803d } .p-plan { background: var(--t-violet); color: var(--violet) } .p-opt { background: var(--subtle); color: var(--muted) }
+  .diagram { width: 100%; display: block }
+  .two { display: grid; grid-template-columns: 1.15fr 1fr; gap: 5mm; align-items: start }
+
+  /* cover */
+  .cover { height: 263mm; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden }
+  .blob { position: absolute; border-radius: 50%; filter: blur(22mm); opacity: .33 }
+  .brand { font: 500 14pt Newsreader, serif; display: flex; align-items: center; gap: 2.5mm; position: relative }
+  .brand i { width: 6.5mm; height: 6.5mm; border-radius: 2mm; background: var(--grad); display: inline-block }
+  .cover h1 { font-size: 46pt; line-height: 1; margin-bottom: 6mm }
+  .cover .sub { font: 13pt/1.45 Newsreader, serif; color: var(--muted); max-width: 135mm }
+  .meta { display: grid; grid-template-columns: repeat(3, auto); gap: 2mm 12mm; font-size: 8.4pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 4mm; position: relative; justify-content: start }
+  .meta b { display: block; color: var(--ink); font-weight: 600 }
+  .toc { columns: 2; column-gap: 12mm; font-size: 8.8pt; color: var(--muted); position: relative }
+  .toc div { padding: .9mm 0 } .toc span { color: var(--rose); font-weight: 600; display: inline-block; width: 6mm }
+  table.stack { font-size: 7.6pt }
+  table.stack td { padding: 1.5mm 2mm 1.5mm 0; line-height: 1.38 }
+  table.stack th { font-size: 6.4pt }
+  table.stack td.k { white-space: normal; width: 13% }
+  table.stack td.tool { font-weight: 600; color: var(--violet); width: 14% }
+  .pro { color: #17803d } .con { color: #b4412f }
+</style>
+</head>
+<body>
+
+<!-- 1 ─ Cover -->
+<section class="page cover">
+  <div class="blob" style="width:110mm;height:110mm;right:-30mm;top:-25mm;background:var(--rose)"></div>
+  <div class="blob" style="width:85mm;height:85mm;right:35mm;top:55mm;background:var(--violet);opacity:.22"></div>
+  <div class="blob" style="width:70mm;height:70mm;left:-25mm;top:45mm;background:var(--coral);opacity:.18"></div>
+  <div class="brand"><i></i>Glink</div>
+  <div style="position:relative">
+    <div class="kicker">Technical proposal · October 2026</div>
+    <h1>Building Glink<br>for <span class="gradwrap"><span class="grad" style="font-style:italic">production.</span></span></h1>
+    <p class="sub">Architecture, the stack and why, payments and automated escrow, video storage, security, running costs and a 16-week plan to take the working platform from pilot to scale.</p>
+  </div>
+  <div class="toc">
+    <div><span>1</span>Executive summary</div>
+    <div><span>2</span>Architecture: today and target</div>
+    <div><span>3</span>Stack and tools</div>
+    <div><span>4</span>Running cost</div>
+    <div><span>5</span>The matching engine</div>
+    <div><span>6</span>Pre-flight checks and AI</div>
+    <div><span>7</span>Video storage and delivery</div>
+    <div><span>8</span>Payments: money in, money out</div>
+    <div><span>9</span>Automated escrow</div>
+    <div><span>10</span>Payment controls and compliance</div>
+    <div><span>11</span>Security and privacy</div>
+    <div><span>12</span>Roadmap</div>
+    <div><span>13</span>Risks, decisions and next steps</div>
+  </div>
+  <div class="meta">
+    <div><b>Prepared for</b>Glink founders and technical reviewers</div>
+    <div><b>Status</b>Proposal for approval</div>
+    <div><b>Codebase</b>github.com/philippython/glink</div>
+  </div>
+</section>
+
+<!-- 2 ─ Executive summary -->
+<section class="page">
+  <div class="kicker">1 · Executive summary</div>
+  <h2>A working platform, ready to be hardened and scaled.</h2>
+  <p class="lede">Glink is a two-sided UGC marketplace: brands write one brief, Glink matches it to the creators most likely to deliver, checks every video against the brief before a brand sees it, and pays creators from escrow on approval — with automatic bonuses when an ad wins. The core product is built and tested. This proposal sets out how we take it to production and then to scale, with particular attention to <b>payments</b> and <b>video storage</b>.</p>
+  <div class="grid4" style="margin-bottom:4mm">
+    <div class="tile"><div class="lab">Automated tests passing</div><div class="val">36</div><div class="sub">auth, matching, payments, escrow automation</div></div>
+    <div class="tile"><div class="lab">Match factors, explained</div><div class="val">8</div><div class="sub">learned from real ad results</div></div>
+    <div class="tile"><div class="lab">Plan to production scale</div><div class="val">16 wks</div><div class="sub">five overlapping phases</div></div>
+    <div class="tile"><div class="lab">Pilot hosting cost</div><div class="val">~$10/mo</div><div class="sub">one server + disk; rises with use</div></div>
+  </div>
+  <h3>What we propose</h3>
+  <table>
+    <tr><th style="width:24%">Area</th><th style="width:38%">Today</th><th>Proposed</th></tr>
+    <tr><td class="k">Payments</td><td>Stripe Checkout top-ups and Connect payouts; automated escrow (reminders, auto-approval, clearance, auto-payouts); idempotent webhooks</td><td>Go live on Stripe; add platform fee, refunds, dispute handling, nightly reconciliation, and a provider adapter so Paystack can serve African markets</td></tr>
+    <tr><td class="k">Video storage</td><td>Files on the server’s persistent disk; uploads pass through the server</td><td>Direct-to-storage resumable uploads to Cloudflare R2; server-side verification and transcoding; signed CDN playback; tiered retention</td></tr>
+    <tr><td class="k">Data &amp; scale</td><td>SQLite on one server; live updates in memory</td><td>Managed Postgres with point-in-time recovery, Redis for events and job queues, stateless app servers behind a load balancer</td></tr>
+    <tr><td class="k">Quality checks</td><td>Format and script checks; optional Claude review of sampled frames</td><td>Add speech-to-text so spoken lines are checked without a script; move checks into background workers</td></tr>
+    <tr><td class="k">Integrations</td><td>Ad results entered by hand; follower counts self-reported</td><td>Import results from TikTok and Meta ad accounts; verify creator channels via platform sign-in</td></tr>
+    <tr><td class="k">Operations</td><td>Deployable to Render with guides and a Blueprint</td><td>CI/CD, error tracking, uptime monitoring, backups with tested restores, staging environment, security review</td></tr>
+  </table>
+  <div class="note"><b>Recommendation.</b> Launch the pilot now on the current single-server architecture with Stripe and email switched on (Phase 1, three weeks). Start the video pipeline in parallel, because it removes the main scaling and memory constraint. Move to Postgres and multiple servers when usage justifies it — the code is structured so this is a contained change, not a rewrite.</div>
+</section>
+
+<!-- 5 ─ Target architecture -->
+<section class="page">
+  <div class="kicker">2 · Architecture: today and target</div>
+  <h2>Stateless servers, managed data, video off the request path.</h2>
+  <p class="lede">The target keeps the same code and API, but moves state out of the server process. Large files never pass through the app servers, slow work runs in background workers, and any app server can answer any request — so we can add servers as traffic grows.</p>
+  <svg class='diagram' viewBox='0 0 520 280' role='img' aria-label='Target architecture' xmlns='http://www.w3.org/2000/svg'><defs><marker id='ah' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#9a9a96'/></marker></defs><rect x='4' y='10' width='92' height='52' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='50.0' y='34.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Browser</text><text x='50.0' y='47.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>web app</text><rect x='130' y='10' width='120' height='52' rx='8' fill='#f7f6f3' stroke='#9a9a96' stroke-width='1.1'/><text x='190.0' y='28.5' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Cloudflare CDN</text><text x='190.0' y='41.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>app assets</text><text x='190.0' y='52.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>signed video playback</text><line x1='97' y1='30' x2='129' y2='30' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='130' y='92' width='120' height='46' rx='8' fill='#f7f6f3' stroke='#9a9a96' stroke-width='1.1'/><text x='190.0' y='113.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Load balancer</text><text x='190.0' y='126.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>HTTPS</text><line x1='50' y1='63' x2='50' y2='115' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='50' y1='115' x2='129' y2='115' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='89.5' y='110' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>API</text><rect x='270' y='6' width='246' height='82' rx='10' fill='none' stroke='#9a9a96' stroke-width='1' stroke-dasharray='5 4'/><text x='280' y='19' font-family='Inter, Arial, sans-serif' font-size='8' font-weight='600' letter-spacing='.08em' fill='#5f5f5b'>STATELESS APP SERVERS × N</text><rect x='282' y='26' width='70' height='52' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='317.0' y='50.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Web 1</text><text x='317.0' y='63.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>API · events</text><rect x='359' y='26' width='70' height='52' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='394.0' y='50.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Web 2</text><text x='394.0' y='63.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>API · events</text><rect x='436' y='26' width='70' height='52' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='471.0' y='50.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Web 3</text><text x='471.0' y='63.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>API · events</text><path d='M251,115 H262 V52 H281' fill='none' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='270' y='100' width='246' height='82' rx='10' fill='none' stroke='#9a9a96' stroke-width='1' stroke-dasharray='5 4'/><text x='280' y='113' font-family='Inter, Arial, sans-serif' font-size='8' font-weight='600' letter-spacing='.08em' fill='#5f5f5b'>WORKERS (SAME CODE)</text><rect x='282' y='116' width='70' height='58' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='317.0' y='137.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Video</text><text x='317.0' y='150.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>ffprobe</text><text x='317.0' y='161.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>ffmpeg</text><rect x='359' y='116' width='70' height='58' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='394.0' y='137.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Checks</text><text x='394.0' y='150.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>pre-flight</text><text x='394.0' y='161.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>AI · speech</text><rect x='436' y='116' width='70' height='58' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='471.0' y='137.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Jobs</text><text x='471.0' y='150.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>email</text><text x='471.0' y='161.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>webhooks</text><rect x='130' y='168' width='120' height='50' rx='8' fill='#ffeef5' stroke='#f2367a' stroke-width='1.1'/><text x='190.0' y='185.5' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Redis</text><text x='190.0' y='198.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>events · queues</text><text x='190.0' y='209.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>rate limits</text><rect x='270' y='200' width='118' height='50' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='329.0' y='223.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Postgres</text><text x='329.0' y='236.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>managed · PITR</text><rect x='398' y='200' width='118' height='50' rx='8' fill='#fff1ec' stroke='#ff5a36' stroke-width='1.1'/><text x='457.0' y='223.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Cloudflare R2</text><text x='457.0' y='236.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>originals · renditions</text><line x1='330' y1='89' x2='330' y2='99' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='330' y1='183' x2='330' y2='199' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='457' y1='183' x2='457' y2='199' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='269' y1='160' x2='251' y2='185' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><path d='M16,63 V262 H457 V251' fill='none' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='236' y='274' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>browser uploads video directly to R2 (presigned, resumable)</text><rect x='28' y='168' width='96' height='50' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='76.0' y='185.5' font-family='Inter, Arial, sans-serif' font-size='9' font-weight='600' fill='#161615' text-anchor='middle'>Stripe · Resend</text><text x='76.0' y='198.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>Anthropic · speech</text><text x='76.0' y='209.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>TikTok · Meta</text></svg>
+  <table style="margin-top:3mm">
+    <tr><th style="width:21%">Change</th><th style="width:35%">Choice</th><th>Reason</th></tr>
+    <tr><td class="k">Database</td><td>Managed Postgres (e.g. Neon, Render or Supabase) with point-in-time recovery</td><td>Multiple servers, concurrent writes, backups to the minute. The SQL is close to SQLite’s, so the move is a contained migration</td></tr>
+    <tr><td class="k">Object storage</td><td>Cloudflare R2 (S3-compatible)</td><td>No egress fees — the dominant cost of video at scale; S3 API keeps us portable to AWS S3</td></tr>
+    <tr><td class="k">CDN</td><td>Cloudflare in front of the app and R2</td><td>Fast global delivery of the app and video; signed URLs keep videos private</td></tr>
+    <tr><td class="k">Events &amp; jobs</td><td>Redis: pub/sub for live updates, BullMQ queues, shared rate limits</td><td>Live updates reach users on any server; retries and back-off for every background job</td></tr>
+    <tr><td class="k">Workers</td><td>Same codebase, separate process: transcode, pre-flight, email, webhooks, reconciliation, the payout sweep</td><td>Keeps API latency low and isolates heavy CPU work</td></tr>
+    <tr><td class="k">Hosting</td><td>Render (or Fly/Railway) web + worker services; optional AWS later</td><td>Low operational load now; containers move anywhere</td></tr>
+  </table>
+  <div class="note"><b>Today:</b> one Node service serves the app and API, with SQLite and videos on a persistent disk — ideal for a pilot, but limited to one server, uploads buffered in memory, and data that only survives if a disk is attached (on Render’s free plan it is wiped on every restart). The target removes each limit. Serverless hosts (Netlify, Vercel) suit only isolated pieces, not the core.</div>
+</section>
+
+<!-- S1 ─ Stack 1 -->
+<section class="page">
+  <div class="kicker">3 · Stack and tools</div>
+  <h2>Proven tools, chosen for a two-sided video marketplace.</h2>
+  <p class="lede">Each choice favours tools that are standard, well documented and portable, so Glink is never locked into one vendor. Costs are list prices at the time of writing — confirm before budgeting.</p>
+  <table class="stack">
+    <tr><th>Area</th><th>Choice</th><th style="width:25%">Why it’s the best fit</th><th style="width:20%">Trade-offs</th><th style="width:13%">Approx. cost</th><th style="width:15%">Proven at</th></tr>
+    <tr><td class="k">Web app</td><td class="tool">React 19 · Vite · Tailwind</td><td><span class="pro">+</span> Huge talent pool; fast builds; one design system for light and dark themes</td><td><span class="con">−</span> Client-side app needs care for SEO pages (landing can be pre-rendered)</td><td>Free (open source)</td><td>React: Meta, Airbnb, Netflix</td></tr>
+    <tr><td class="k">API</td><td class="tool">Node.js 24 · Hono</td><td><span class="pro">+</span> One language end to end; Hono is tiny, fast and standards-based, runs on any host</td><td><span class="con">−</span> Smaller ecosystem than Express (but standard Fetch API)</td><td>Free</td><td>Node.js: Netflix, LinkedIn, PayPal</td></tr>
+    <tr><td class="k">Database</td><td class="tool">SQLite → Postgres (Neon or Supabase)</td><td><span class="pro">+</span> SQLite: zero-ops pilot. Postgres: concurrent writes, point-in-time recovery, many servers</td><td><span class="con">−</span> Postgres move needs async data layer (Phase 3); SQLite is single-server</td><td>SQLite free · Postgres free tier, then ~$20–45/mo</td><td>Postgres: Instagram, Reddit</td></tr>
+    <tr><td class="k">Auth</td><td class="tool">Built-in (scrypt, sessions, OAuth)</td><td><span class="pro">+</span> Already built and tested; no per-user fees; full control of roles and teams</td><td><span class="con">−</span> We maintain it (2FA and audit log planned)</td><td>Free</td><td>Same pattern as most Rails/Django apps</td></tr>
+    <tr><td class="k">Auth (alternative)</td><td class="tool">Supabase Auth or Clerk</td><td><span class="pro">+</span> Hosted login, MFA and social sign-in out of the box</td><td><span class="con">−</span> Migration of existing users; per-user pricing at scale (Clerk); vendor lock-in</td><td>Supabase free to 50k users · Clerk free to 10k, then per user</td><td>—</td></tr>
+    <tr><td class="k">Object storage</td><td class="tool">Cloudflare R2</td><td><span class="pro">+</span> S3-compatible API with <b>no egress fees</b> — the main cost of video playback</td><td><span class="con">−</span> Fewer advanced features than AWS S3</td><td>$0.015/GB-month · 10 GB free</td><td>S3 API: Netflix, Airbnb run on S3</td></tr>
+    <tr><td class="k">Video processing</td><td class="tool">FFmpeg workers</td><td><span class="pro">+</span> Industry-standard, free, full control of renditions, posters and AI frames</td><td><span class="con">−</span> We run the workers and queue</td><td>Compute only (~$40/mo at growth)</td><td>Powers VLC, OBS and most video pipelines</td></tr>
+    <tr><td class="k">Video (alternative)</td><td class="tool">Mux or Cloudflare Stream</td><td><span class="pro">+</span> Managed encoding, adaptive streaming and analytics; no workers</td><td><span class="con">−</span> Per-minute pricing; less control over originals</td><td>Usage-based (Stream ≈ $5 per 1,000 min stored)</td><td>Mux: many video SaaS products</td></tr>
+    <tr><td class="k">CDN & DNS</td><td class="tool">Cloudflare</td><td><span class="pro">+</span> Global edge, free TLS and DDoS protection; pairs with R2 and signed URLs</td><td><span class="con">−</span> Advanced rules and analytics need a paid plan</td><td>Free plan; Pro $20/mo optional</td><td>Millions of websites</td></tr>
+    <tr><td class="k">Hosting</td><td class="tool">Render (web + worker + disk)</td><td><span class="pro">+</span> Git-push deploys, HTTPS, disks, background workers; no DevOps team needed</td><td><span class="con">−</span> Fewer knobs than AWS; one region per service</td><td>Starter $7 · Standard $25/mo · disk $0.25/GB</td><td>Render hosts many startups</td></tr>
+    <tr><td class="k">Hosting (alternatives)</td><td class="tool">Fly.io · Railway · AWS</td><td><span class="pro">+</span> Fly/Railway similar; AWS for full control at large scale</td><td><span class="con">−</span> AWS needs DevOps skills</td><td>Comparable; AWS varies</td><td>—</td></tr>
+  </table>
+  <div class="note"><b>Not suitable as built:</b> Netlify and Vercel (serverless). They suit static sites and short functions; Glink needs a long-running server for live updates, background jobs and video work.</div>
+</section>
+<!-- S2 ─ Stack 2 -->
+<section class="page">
+  <div class="kicker">3 · Stack and tools (continued)</div>
+  <h2>Money, messages, jobs and visibility.</h2>
+  <table class="stack" style="margin-top:3mm">
+    <tr><th>Area</th><th>Choice</th><th style="width:25%">Why it’s the best fit</th><th style="width:20%">Trade-offs</th><th style="width:13%">Approx. cost</th><th style="width:15%">Proven at</th></tr>
+    <tr><td class="k">Payments</td><td class="tool">Stripe Checkout + Connect Express</td><td><span class="pro">+</span> Cards, Apple/Google Pay; Stripe runs KYC and bank payouts; built-in idempotency</td><td><span class="con">−</span> Not available to platforms in Nigeria and much of Africa</td><td>2.9% + 30¢ per card · Connect $2/active account + 0.25% + 25¢ per payout</td><td>Shopify, Lyft, Substack</td></tr>
+    <tr><td class="k">Payments (Africa)</td><td class="tool">Paystack (adapter)</td><td><span class="pro">+</span> Cards, bank transfer, USSD; local payouts in NG, GH, KE, ZA; owned by Stripe</td><td><span class="con">−</span> Separate integration; local payouts only</td><td>NG: 1.5% + ₦100 per local card (capped)</td><td>Thousands of African businesses</td></tr>
+    <tr><td class="k">Email</td><td class="tool">Resend</td><td><span class="pro">+</span> Simple API, good deliverability, quick domain setup</td><td><span class="con">−</span> Younger company</td><td>Free 3,000/mo · $20/mo for 50,000</td><td>Popular with modern SaaS</td></tr>
+    <tr><td class="k">Email (alternative)</td><td class="tool">Postmark · SendGrid</td><td><span class="pro">+</span> Postmark: excellent transactional deliverability</td><td><span class="con">−</span> Postmark paid only; SendGrid noisier</td><td>~$15–20/mo</td><td>SendGrid: very large senders</td></tr>
+    <tr><td class="k">Jobs & cache</td><td class="tool">Redis (Upstash/Render) + BullMQ</td><td><span class="pro">+</span> Retries, back-off and schedules for transcoding, email, webhooks; pub/sub for live updates</td><td><span class="con">−</span> Another service to run (managed options exist)</td><td>Free tier · ~$10/mo at growth</td><td>Redis: GitHub, X (Twitter)</td></tr>
+    <tr><td class="k">Monitoring</td><td class="tool">Sentry + Better Stack</td><td><span class="pro">+</span> Errors with release tags; uptime checks and alerts</td><td><span class="con">−</span> Two tools to watch</td><td>Free tiers · Sentry Team ~$26/mo</td><td>Used by most product teams</td></tr>
+    <tr><td class="k">CI/CD</td><td class="tool">GitHub Actions</td><td><span class="pro">+</span> Type-check, tests and build on every push; deploy to staging, then production</td><td><span class="con">−</span> Minutes limits on private repos</td><td>Free tier (2,000 min/mo)</td><td>Industry default</td></tr>
+    <tr><td class="k">AI review</td><td class="tool">Claude (Anthropic API)</td><td><span class="pro">+</span> Strong vision and instruction-following; structured outputs make results machine-checkable</td><td><span class="con">−</span> Per-token cost; optional by design</td><td>Per token · measured in pilot</td><td>—</td></tr>
+    <tr><td class="k">Speech-to-text</td><td class="tool">Deepgram or AssemblyAI</td><td><span class="pro">+</span> Word-level timestamps to check spoken lines without a script</td><td><span class="con">−</span> Third-party audio processing (DPA needed)</td><td>Fractions of a cent per audio minute</td><td>—</td></tr>
+    <tr><td class="k">Backups</td><td class="tool">Disk snapshots → Postgres PITR + R2 versioning</td><td><span class="pro">+</span> Restore to any minute; recover deleted videos</td><td><span class="con">−</span> Restore drills needed</td><td>Included / few $/mo</td><td>—</td></tr>
+  </table>
+  <div class="grid2">
+    <div class="card"><h4>Do we need Supabase?</h4><p>Not for authentication — Glink’s own auth already works and is tested; the sign-in problems seen on Render came from the free plan wiping its data on restart. Supabase is a good option as a <b>managed Postgres</b> (with a generous free tier) when we move off SQLite. Its Storage is an alternative to R2, but R2’s free egress is cheaper for video.</p></div>
+    <div class="card"><h4>Design principles</h4><p>Standard protocols (S3, SQL, OAuth, webhooks) over proprietary APIs; managed services for anything stateful; every vendor behind a small adapter (payments, email, storage, AI) so it can be swapped without touching product code.</p></div>
+  </div>
+</section>
+<!-- C1 ─ Cost -->
+<section class="page">
+  <div class="kicker">4 · Running cost</div>
+  <h2>Pay for what the stage needs, and no more.</h2>
+  <div class="two">
+    <div class="figure" style="margin-top:0">
+      <div class="ft">Indicative monthly infrastructure cost</div>
+      <div class="fs">USD per month by stage, excluding Stripe fees and AI/speech usage, which scale with revenue</div>
+      <svg viewBox='0 0 300 250' width='100%' role='img' aria-label='Indicative monthly infrastructure cost by stage' xmlns='http://www.w3.org/2000/svg'><line x1='44' x2='290' y1='158.0' y2='158.0' stroke='#e7e6e2' stroke-width='1'/><text x='36.0' y='162.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>$0</text><line x1='44' x2='290' y1='122.0' y2='122.0' stroke='#e7e6e2' stroke-width='1'/><text x='36.0' y='126.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>$300</text><line x1='44' x2='290' y1='86.0' y2='86.0' stroke='#e7e6e2' stroke-width='1'/><text x='36.0' y='90.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>$600</text><line x1='44' x2='290' y1='50.0' y2='50.0' stroke='#e7e6e2' stroke-width='1'/><text x='36.0' y='54.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>$900</text><line x1='44' x2='290' y1='14.0' y2='14.0' stroke='#e7e6e2' stroke-width='1'/><text x='36.0' y='18.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>$1,200</text><rect x='72.0' y='157.2' width='24.0' height='1.0' fill='#6e4cff'/><path d='M72.0,157.8 V157.8 Q72.0,156.8 73.0,156.8 H95.0 Q96.0,156.8 96.0,157.8 V157.8 Z' fill='#ff5a36'/><text x='84.0' y='150.8' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='middle' font-weight='600'>$10</text><text x='84.0' y='174.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='middle' font-weight='400'>Pilot</text><rect x='154.0' y='152.0' width='24.0' height='4.0' fill='#6e4cff'/><rect x='154.0' y='145.4' width='24.0' height='4.6' fill='#ff5a36'/><rect x='154.0' y='143.6' width='24.0' height='1.0' fill='#1baf7a'/><rect x='154.0' y='138.8' width='24.0' height='2.8' fill='#eda100'/><path d='M154.0,138.8 V137.3 Q154.0,133.3 158.0,133.3 H174.0 Q178.0,133.3 178.0,137.3 V138.8 Z' fill='#e87ba4'/><text x='166.0' y='127.3' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='middle' font-weight='600'>$206</text><text x='166.0' y='174.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='middle' font-weight='400'>Growth</text><rect x='236.0' y='117.2' width='24.0' height='38.8' fill='#6e4cff'/><rect x='236.0' y='87.2' width='24.0' height='28.0' fill='#ff5a36'/><rect x='236.0' y='72.8' width='24.0' height='12.4' fill='#1baf7a'/><rect x='236.0' y='36.8' width='24.0' height='34.0' fill='#eda100'/><path d='M236.0,36.8 V22.8 Q236.0,18.8 240.0,18.8 H256.0 Q260.0,18.8 260.0,22.8 V36.8 Z' fill='#e87ba4'/><text x='248.0' y='12.8' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='middle' font-weight='600'>$1,160</text><text x='248.0' y='174.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='middle' font-weight='400'>Scale</text><rect x='0' y='189' width='10' height='10' rx='2' fill='#6e4cff'/><text x='15.0' y='198.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Compute</text><rect x='150' y='189' width='10' height='10' rx='2' fill='#ff5a36'/><text x='165.0' y='198.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Database & cache</text><rect x='0' y='207' width='10' height='10' rx='2' fill='#1baf7a'/><text x='15.0' y='216.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Storage & CDN</text><rect x='150' y='207' width='10' height='10' rx='2' fill='#eda100'/><text x='165.0' y='216.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Video processing</text><rect x='0' y='225' width='10' height='10' rx='2' fill='#e87ba4'/><text x='15.0' y='234.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Email & monitoring</text></svg>
+      <div class="src">Estimates from public list prices at the time of writing; confirm before budgeting.</div>
+    </div>
+    <div>
+      <table style="margin-top:0">
+        <tr><th>Item</th><th>Pilot</th><th>Growth</th><th>Scale</th></tr>
+        <tr><td class="k">Compute</td><td>Render Starter $7</td><td>2× Standard $50</td><td>Web + worker pools ~$340</td></tr>
+        <tr><td class="k">Database &amp; cache</td><td>SQLite + disk $3</td><td>Postgres ~$45 + Redis $10</td><td>Postgres + replica + Redis ~$250</td></tr>
+        <tr><td class="k">Storage &amp; CDN</td><td>On disk $0</td><td>R2 ~1 TB $15</td><td>R2 ~8 TB $120</td></tr>
+        <tr><td class="k">Video processing</td><td>In app $0</td><td>1 worker $40</td><td>Transcode pool ~$300</td></tr>
+        <tr><td class="k">Email &amp; monitoring</td><td>Free tiers $0</td><td>Resend $20 + Sentry $26</td><td>~$150</td></tr>
+        <tr><td class="k">Total / month</td><td><b>~$10</b></td><td><b>~$206</b></td><td><b>~$1,160</b></td></tr>
+      </table>
+      <p style="font-size:8pt;color:var(--muted)">Usage costs on top: card processing (2.9% + 30¢), payouts, AI review tokens and speech minutes — all proportional to transactions, so they scale with revenue.</p>
+    </div>
+  </div>
+  <h3>Scaling stages</h3>
+  <table>
+    <tr><th style="width:15%">Stage</th><th style="width:30%">Trigger</th><th>Architecture</th></tr>
+    <tr><td class="k">Pilot (≤ 50 brands)</td><td>First paying brands</td><td>One web service + persistent disk (today), Stripe and Resend on, escrow automation running</td></tr>
+    <tr><td class="k">Growth (≤ 500 brands)</td><td>Uploads over ~150 MB, more than one server, or zero-downtime deploys</td><td>R2 video pipeline, Postgres, Redis, one worker, two web instances</td></tr>
+    <tr><td class="k">Scale (~5,000 brands)</td><td>Sustained high upload volume or multiple regions</td><td>Autoscaled web and worker pools, read replica, dedicated transcode workers, CDN tuning</td></tr>
+  </table>
+  <h3>Environments and operations</h3>
+  <ul class="ticks">
+    <li><b>Local, staging, production</b> — staging uses Stripe test keys and seeded data; production is promoted from staging.</li>
+    <li><b>CI on every push</b>: type-check, 36+ tests and a build; migrations run automatically after a backup; rollback by redeploying the previous build.</li>
+    <li><b>Alerts</b> for errors, uptime, failed webhooks, reconciliation differences and queue backlogs.</li>
+  </ul>
+</section>
+<!-- 7 ─ Matching -->
+<section class="page">
+  <div class="kicker">5 · The matching engine</div>
+  <h2>A score anyone can read, learned from results.</h2>
+  <p class="lede">Every creator gets a 0–99 score for every campaign: a weighted sum of eight factors, each producing a plain-language reason. It is a set of pure, unit-tested functions, so weights can be tuned safely as real data arrives.</p>
+  <div class="two">
+    <div class="figure">
+      <div class="ft">Factor weights</div>
+      <div class="fs">Share of the match score each factor carries</div>
+      <svg viewBox='0 0 300 172' width='100%' role='img' aria-label='Matching factor weights' xmlns='http://www.w3.org/2000/svg'><text x='104.0' y='14.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Strengths for the goal</text><path d='M112.0,4.0 H257.8 Q261.8,4.0 261.8,8.0 V13.0 Q261.8,17.0 257.8,17.0 H112.0 Z' fill='#6e4cff'/><text x='266.8' y='14.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>24%</text><text x='104.0' y='35.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Category fit</text><path d='M112.0,25.0 H245.3 Q249.3,25.0 249.3,29.0 V34.0 Q249.3,38.0 245.3,38.0 H112.0 Z' fill='#6e4cff'/><text x='254.3' y='35.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>22%</text><text x='104.0' y='56.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Style fit</text><path d='M112.0,46.0 H182.9 Q186.9,46.0 186.9,50.0 V55.0 Q186.9,59.0 182.9,59.0 H112.0 Z' fill='#6e4cff'/><text x='191.9' y='56.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>12%</text><text x='104.0' y='77.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Reliability</text><path d='M112.0,67.0 H182.9 Q186.9,67.0 186.9,71.0 V76.0 Q186.9,80.0 182.9,80.0 H112.0 Z' fill='#6e4cff'/><text x='191.9' y='77.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>12%</text><text x='104.0' y='98.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Market fit</text><path d='M112.0,88.0 H170.4 Q174.4,88.0 174.4,92.0 V97.0 Q174.4,101.0 170.4,101.0 H112.0 Z' fill='#6e4cff'/><text x='179.4' y='98.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>10%</text><text x='104.0' y='119.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Budget fit</text><path d='M112.0,109.0 H170.4 Q174.4,109.0 174.4,113.0 V118.0 Q174.4,122.0 170.4,122.0 H112.0 Z' fill='#6e4cff'/><text x='179.4' y='119.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>10%</text><text x='104.0' y='140.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Proven results</text><path d='M112.0,130.0 H145.4 Q149.4,130.0 149.4,134.0 V139.0 Q149.4,143.0 145.4,143.0 H112.0 Z' fill='#6e4cff'/><text x='154.4' y='140.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>6%</text><text x='104.0' y='161.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#5f5f5b' text-anchor='end' font-weight='400'>Worked with the brand</text><path d='M112.0,151.0 H133.0 Q137.0,151.0 137.0,155.0 V160.0 Q137.0,164.0 133.0,164.0 H112.0 Z' fill='#6e4cff'/><text x='142.0' y='161.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#161615' text-anchor='start' font-weight='600'>4%</text></svg>
+      <div class="src">Source: <code>server/src/matching.ts</code>. Score = min(99, 100 × Σ weight × factor × availability).</div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">Goal decides which strength counts</h3>
+      <table>
+        <tr><th>Goal</th><th>Hook</th><th>Retention</th><th>Conversion</th></tr>
+        <tr><td class="k">Purchases</td><td>25%</td><td>25%</td><td>50%</td></tr>
+        <tr><td class="k">Sign-ups</td><td>25%</td><td>35%</td><td>40%</td></tr>
+        <tr><td class="k">Content testing</td><td>40%</td><td>40%</td><td>20%</td></tr>
+        <tr><td class="k">Awareness</td><td>55%</td><td>35%</td><td>10%</td></tr>
+      </table>
+      <h3>Who gets invited</h3>
+      <ul class="ticks">
+        <li>Unavailable creators, or rates above twice the fee, are not eligible.</li>
+        <li>Auto-match invites eligible creators scoring <b>55+</b>, up to the number wanted; a decline invites the next best.</li>
+        <li>Availability multiplies the score: Limited × 0.85; three or more active jobs × 0.8.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="two">
+    <div class="figure">
+      <div class="ft">Strengths move towards real results — steadily</div>
+      <div class="fs">Learned hook strength for a creator with a prior of 50 whose ads each score 90</div>
+      <svg viewBox='0 0 300 160' width='100%' role='img' aria-label='Learned hook strength after each measured ad' xmlns='http://www.w3.org/2000/svg'><line x1='28' x2='238' y1='130.0' y2='130.0' stroke='#e7e6e2' stroke-width='1'/><text x='20.0' y='134.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>40</text><line x1='28' x2='238' y1='90.0' y2='90.0' stroke='#e7e6e2' stroke-width='1'/><text x='20.0' y='94.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>60</text><line x1='28' x2='238' y1='50.0' y2='50.0' stroke='#e7e6e2' stroke-width='1'/><text x='20.0' y='54.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>80</text><line x1='28' x2='238' y1='10.0' y2='10.0' stroke='#e7e6e2' stroke-width='1'/><text x='20.0' y='14.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>100</text><line x1='28' x2='238' y1='30.0' y2='30.0' stroke='#9a9a96' stroke-width='1' stroke-dasharray='0'/><text x='244.0' y='34.0' font-family='Inter, Arial, sans-serif' font-size='9' fill='#5f5f5b' text-anchor='start' font-weight='400'>each ad: 90</text><text x='28.0' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>0</text><text x='54.2' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>1</text><text x='80.5' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>2</text><text x='106.8' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>3</text><text x='133.0' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>4</text><text x='159.2' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>5</text><text x='185.5' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>6</text><text x='211.8' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>7</text><text x='238.0' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>8</text><text x='133.0' y='156.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#5f5f5b' text-anchor='middle' font-weight='400'>Measured ads</text><path d='M28.0,110.0 L54.2,90.0 L80.5,78.0 L106.8,70.0 L133.0,64.3 L159.2,60.0 L185.5,56.7 L211.8,54.0 L238.0,51.8' fill='none' stroke='#6e4cff' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/><circle cx='28.0' cy='110.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='54.2' cy='90.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='80.5' cy='78.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='106.8' cy='70.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='133.0' cy='64.3' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='159.2' cy='60.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='185.5' cy='56.7' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='211.8' cy='54.0' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><circle cx='238.0' cy='51.8' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><text x='22.0' y='100.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='end' font-weight='600'>50</text><text x='48.2' y='80.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='end' font-weight='600'>60</text><text x='230.0' y='41.8' font-family='Inter, Arial, sans-serif' font-size='11' fill='#161615' text-anchor='end' font-weight='600'>79</text></svg>
+      <div class="src">learned = (prior × k + Σ observed) / (k + n), k = 3 (4 for reliability). One lucky video can’t swing a score.</div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">How strengths are measured</h3>
+      <table>
+        <tr><th>Strength</th><th>From</th></tr>
+        <tr><td class="k">Hook</td><td>3-second view rate (≈90 at 50%)</td></tr>
+        <tr><td class="k">Retention</td><td>15-second view rate (≈90 at 35%)</td></tr>
+        <tr><td class="k">Conversion</td><td>Click-through and conversion rate</td></tr>
+        <tr><td class="k">Reliability</td><td>On time (100) or late (40)</td></tr>
+      </table>
+      <h3>Proposed next</h3>
+      <p>Import results automatically from TikTok and Meta (Phase 4) so strengths update without manual entry; review weights quarterly against which matches produced winning ads; add audience data from verified channels.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ─ Pre-flight -->
+<section class="page">
+  <div class="kicker">6 · Pre-flight checks and AI</div>
+  <h2>Catch problems before a brand spends time on them.</h2>
+  <p class="lede">Each upload is checked against its brief in layers. Anything that can’t be verified is marked “check by eye” — the system never guesses. In the target architecture these checks run in a background worker on the verified file.</p>
+  <svg class='diagram' viewBox='0 0 520 82' role='img' aria-label='Pre-flight pipeline' xmlns='http://www.w3.org/2000/svg'><defs><marker id='ah' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#9a9a96'/></marker></defs><rect x='2' y='8' width='76' height='50' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='40.0' y='31.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Upload</text><text x='40.0' y='44.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>stored file</text><line x1='79' y1='33' x2='89' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='90' y='8' width='76' height='50' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='128.0' y='25.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>1 · File</text><text x='128.0' y='38.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>length · ratio</text><text x='128.0' y='49.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>resolution</text><line x1='167' y1='33' x2='177' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='178' y='8' width='76' height='50' rx='8' fill='#ffeef5' stroke='#f2367a' stroke-width='1.1'/><text x='216.0' y='25.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>2 · Script</text><text x='216.0' y='38.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>must-say</text><text x='216.0' y='49.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>avoid words</text><line x1='255' y1='33' x2='265' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='266' y='8' width='76' height='50' rx='8' fill='#fff1ec' stroke='#ff5a36' stroke-width='1.1'/><text x='304.0' y='25.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>3 · Vision</text><text x='304.0' y='38.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>8 frames</text><text x='304.0' y='49.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>to Claude</text><line x1='343' y1='33' x2='353' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='354' y='8' width='76' height='50' rx='8' fill='#f7f6f3' stroke='#9a9a96' stroke-width='1.1'/><text x='392.0' y='25.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>4 · Speech</text><text x='392.0' y='38.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>transcript</text><text x='392.0' y='49.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>(planned)</text><line x1='431' y1='33' x2='441' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='442' y='8' width='76' height='50' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='480.0' y='25.5' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Result</text><text x='480.0' y='38.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>brief match</text><text x='480.0' y='49.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>0–100</text><text x='260' y='74' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b' text-anchor='middle'>pass ✓ · fail ✕ with a fix and timestamp · review ? “check by eye” — the same list is shown to creator and brand</text></svg>
+  <table style="margin-top:3mm">
+    <tr><th style="width:18%">Layer</th><th style="width:44%">Checks</th><th>Status</th></tr>
+    <tr><td class="k">1 · File</td><td>Length within range; aspect ratio within 3% of the brief; resolution (1080p passes, 720p review, lower fails); MP4/MOV</td><td><span class="pill p-done">Built</span> moves server-side with ffprobe (Phase 2)</td></tr>
+    <tr><td class="k">2 · Script</td><td>Must-include lines and avoid words (quoted words plus a built-in medical-claims list), with estimated timestamps</td><td><span class="pill p-done">Built</span></td></tr>
+    <tr><td class="k">3 · Vision</td><td>Up to 8 sampled frames judged by Claude for visual items (“show the texture”), returning pass, fail or unclear with a timestamp</td><td><span class="pill p-done">Built</span> optional, needs an API key</td></tr>
+    <tr><td class="k">4 · Speech</td><td>Speech-to-text transcript with word timings, so spoken lines are checked without a creator-supplied script; music-over-voice detection</td><td><span class="pill p-plan">Phase 4</span> provider such as Deepgram or AssemblyAI</td></tr>
+  </table>
+  <div class="grid3">
+    <div class="card"><h4>Scoring</h4><p>Brief match (0–100) = 20 × format score + 80 × brief score, where each item counts pass 1, review 0.6, fail 0.</p></div>
+    <div class="card"><h4>AI cost control</h4><p>Frames are down-sampled and capped at eight; one structured-output call per upload; AI can be turned off per environment. Planned: cache results per file so re-checks of the same upload are free. Per-review token cost is measured during the pilot.</p></div>
+    <div class="card"><h4>Failure handling</h4><p>If an AI or transcription call fails, the deterministic results stand and the item is marked for a human — uploads are never blocked by a third party.</p></div>
+  </div>
+</section>
+
+<!-- 9 ─ Video -->
+<section class="page">
+  <div class="kicker">7 · Video storage and delivery</div>
+  <h2>Upload straight to storage. Verify on the server. Stream privately.</h2>
+  <p class="lede">Video is the heaviest thing Glink handles and the asset brands pay for. The plan takes large files off the app servers entirely, verifies what was uploaded, produces fast previews, and keeps originals safe for download.</p>
+  <svg class='diagram' viewBox='0 0 520 203' role='img' aria-label='Video upload and delivery pipeline' xmlns='http://www.w3.org/2000/svg'><defs><marker id='ah' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#9a9a96'/></marker></defs><rect x='4' y='8' width='96' height='50' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='52.0' y='31.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Creator browser</text><text x='52.0' y='44.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>picks a file</text><rect x='140' y='8' width='96' height='50' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='188.0' y='31.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Glink API</text><text x='188.0' y='44.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>issues upload URLs</text><rect x='276' y='8' width='112' height='50' rx='8' fill='#fff1ec' stroke='#ff5a36' stroke-width='1.1'/><text x='332.0' y='31.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Cloudflare R2</text><text x='332.0' y='44.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>originals/…</text><rect x='424' y='8' width='92' height='50' rx='8' fill='#ffeef5' stroke='#f2367a' stroke-width='1.1'/><text x='470.0' y='31.0' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Queue</text><text x='470.0' y='44.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>upload complete</text><line x1='101' y1='24' x2='139' y2='24' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='120.0' y='19' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>1</text><path d='M52,59 V72 H330 V59' fill='none' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='190' y='84' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>2</text><line x1='237' y1='40' x2='275' y2='40' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='256.0' y='36' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>3</text><line x1='389' y1='33' x2='423' y2='33' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='276' y='96' width='112' height='56' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='332.0' y='116.5' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Video worker</text><text x='332.0' y='129.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>ffprobe verify</text><text x='332.0' y='140.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>ffmpeg 720p + poster</text><line x1='470' y1='59' x2='470' y2='124' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='470' y1='124' x2='389' y2='124' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='429.5' y='119' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>4</text><rect x='140' y='96' width='96' height='56' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='188.0' y='116.5' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Pre-flight</text><text x='188.0' y='129.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>checks + AI</text><text x='188.0' y='140.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>on real file</text><line x1='275' y1='124' x2='237' y2='124' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='256.0' y='119' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>5</text><rect x='4' y='96' width='96' height='56' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='52.0' y='116.5' font-family='Inter, Arial, sans-serif' font-size='10.5' font-weight='600' fill='#161615' text-anchor='middle'>Brand review</text><text x='52.0' y='129.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>signed CDN link</text><text x='52.0' y='140.5' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>download original</text><line x1='139' y1='124' x2='101' y2='124' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='120.0' y='119' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>6</text><text x='260' y='170' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b' text-anchor='middle'>1 request upload URLs · 2 upload 10 MB parts straight to R2 (resumable) · 3 confirm</text><text x='260' y='182' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b' text-anchor='middle'>4 queue a job · 5 verify, transcode, check · 6 notify the brand</text><text x='260' y='197' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b' text-anchor='middle'>No video bytes pass through the app servers · originals are never altered · playback links expire in minutes</text></svg>
+  <div class="two" style="margin-top:3mm">
+    <div>
+      <h3 style="margin-top:0">How it works</h3>
+      <ul class="ticks">
+        <li><b>Resumable direct upload.</b> The API issues short-lived, presigned multipart URLs; the browser uploads 10 MB parts straight to R2 and retries failed parts. Files up to 2 GB; no server memory used.</li>
+        <li><b>Server-side verification.</b> A worker runs <code>ffprobe</code> on the stored file — real duration, resolution, codec and audio — replacing browser-reported values.</li>
+        <li><b>Renditions.</b> <code>ffmpeg</code> makes a 720p review copy (fast start), a poster image and the frames for the AI check. The original is never altered.</li>
+        <li><b>Private playback.</b> Signed Cloudflare links that expire in minutes; brands download the original on approval.</li>
+        <li><b>Safety.</b> File type checked by content, not name; optional moderation scan.</li>
+      </ul>
+    </div>
+    <div class="figure" style="margin-top:0">
+      <div class="ft">Projected hot storage, first year</div>
+      <div class="fs">Assumes 200 videos in month 1 growing 20%/month (≈7,916 videos), 60 MB originals, 20 MB renditions</div>
+      <svg viewBox='0 0 300 170' width='100%' role='img' aria-label='Projected video storage' xmlns='http://www.w3.org/2000/svg'><line x1='50' x2='212' y1='142.0' y2='142.0' stroke='#e7e6e2' stroke-width='1'/><text x='42.0' y='146.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>0 GB</text><line x1='50' x2='212' y1='76.0' y2='76.0' stroke='#e7e6e2' stroke-width='1'/><text x='42.0' y='80.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>500 GB</text><line x1='50' x2='212' y1='10.0' y2='10.0' stroke='#e7e6e2' stroke-width='1'/><text x='42.0' y='14.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='end' font-weight='400'>1 TB</text><text x='50.0' y='158.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>M1</text><text x='94.2' y='158.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>M4</text><text x='138.4' y='158.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>M7</text><text x='182.5' y='158.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>M10</text><text x='212.0' y='158.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#9a9a96' text-anchor='middle' font-weight='400'>M12</text><path d='M50.0,139.9 L64.7,137.4 L79.5,134.3 L94.2,130.7 L108.9,126.3 L123.6,121.0 L138.4,114.7 L153.1,107.2 L167.8,98.1 L182.5,87.2 L197.3,74.1 L212.0,58.4' fill='none' stroke='#6e4cff' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/><circle cx='212.0' cy='58.4' r='4' fill='#6e4cff' stroke='#fff' stroke-width='2'/><text x='221.0' y='61.4' font-family='Inter, Arial, sans-serif' font-size='10' fill='#161615' text-anchor='start' font-weight='600'>633 GB</text><text x='221.0' y='72.4' font-family='Inter, Arial, sans-serif' font-size='8.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>All in hot storage</text><path d='M50.0,139.9 L64.7,137.4 L79.5,134.3 L94.2,132.2 L108.9,129.8 L123.6,126.8 L138.4,123.2 L153.1,118.9 L167.8,113.8 L182.5,107.6 L197.3,100.2 L212.0,91.4' fill='none' stroke='#ff5a36' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/><circle cx='212.0' cy='91.4' r='4' fill='#ff5a36' stroke='#fff' stroke-width='2'/><text x='221.0' y='94.4' font-family='Inter, Arial, sans-serif' font-size='10' fill='#161615' text-anchor='start' font-weight='600'>384 GB</text><text x='221.0' y='105.4' font-family='Inter, Arial, sans-serif' font-size='8.5' fill='#5f5f5b' text-anchor='start' font-weight='400'>Tiered (hot part)</text></svg>
+      <div class="src">Tiered policy keeps renditions plus 3 months of originals hot, and moves older originals (250 GB by month 12) to infrequent-access storage.</div>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:22%">Retention tier</th><th style="width:40%">What</th><th>Rule</th></tr>
+    <tr><td class="k">Hot (R2 standard)</td><td>Review copies, posters, originals under 90 days</td><td>Serves all playback; zero egress cost</td></tr>
+    <tr><td class="k">Cool (R2 infrequent access)</td><td>Originals older than 90 days</td><td>Lifecycle rule moves them automatically; restored on demand for re-download</td></tr>
+    <tr><td class="k">Deleted</td><td>Rejected or abandoned uploads; closed accounts</td><td>After 30 days, honouring licences and privacy requests</td></tr>
+  </table>
+  <div class="note"><b>Why R2?</b> Storage at these volumes costs tens of dollars a month; what gets expensive with video is <b>egress</b> (every playback), which R2 doesn’t charge. Its S3 API keeps AWS S3 + CloudFront open, and a managed service such as Mux remains a per-minute shortcut if we need adaptive streaming later.</div>
+</section>
+
+<!-- 10 ─ Payments 1 -->
+<section class="page">
+  <div class="kicker">8 · Payments: money in, money out</div>
+  <h2>Stripe moves the money. The ledger explains it.</h2>
+  <p class="lede">Brands top up a wallet by card; campaign budgets are held when a campaign launches; fees release on approval and become withdrawable after three days; bonuses and prizes follow the same path. Stripe handles card data, identity checks and bank payouts, so Glink never touches card or bank details.</p>
+  <svg class='diagram' viewBox='0 0 520 164' role='img' aria-label='Money flow' xmlns='http://www.w3.org/2000/svg'><defs><marker id='ah' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#9a9a96'/></marker></defs><rect x='4' y='8' width='92' height='44' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='50.0' y='28.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Brand card</text><text x='50.0' y='41.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>Stripe Checkout</text><rect x='108' y='8' width='92' height='44' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='154.0' y='28.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Wallet</text><text x='154.0' y='41.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>ledger +</text><rect x='212' y='8' width='92' height='44' rx='8' fill='#ffeef5' stroke='#f2367a' stroke-width='1.1'/><text x='258.0' y='28.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Held</text><text x='258.0' y='41.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>per campaign</text><rect x='316' y='8' width='92' height='44' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='362.0' y='28.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Pending</text><text x='362.0' y='41.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>3 days</text><rect x='420' y='8' width='92' height='44' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='466.0' y='28.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Available</text><text x='466.0' y='41.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>creator</text><line x1='97' y1='30' x2='107' y2='30' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='102' y='66' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>webhook</text><line x1='201' y1='30' x2='211' y2='30' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='206' y='66' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>launch</text><line x1='305' y1='30' x2='315' y2='30' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='310' y='66' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>approve / win</text><line x1='409' y1='30' x2='419' y2='30' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='414' y='66' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>sweep</text><rect x='316' y='96' width='92' height='44' rx='8' fill='#fff1ec' stroke='#ff5a36' stroke-width='1.1'/><text x='362.0' y='116.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Stripe Transfer</text><text x='362.0' y='129.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>idempotent</text><rect x='420' y='96' width='96' height='44' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='468.0' y='116.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Creator bank</text><text x='468.0' y='129.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>via Connect payout</text><path d='M466,53 V82 H362 V95' fill='none' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='472' y='72' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='start'>withdraw</text><line x1='409' y1='118' x2='419' y2='118' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><path d='M258,53 V112 H160 V53' fill='none' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='209' y='126' font-family='Inter, Arial, sans-serif' font-size='8' fill='#5f5f5b' text-anchor='middle'>unused budget returns</text><text x='4' y='158' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b'>Contest prizes follow approve → pending. Platform fee (proposed) is retained before transfer.</text></svg>
+  <div class="two" style="margin-top:3mm">
+    <div>
+      <h3 style="margin-top:0">The flow, step by step</h3>
+      <table>
+        <tr><th>Event</th><th>System action</th></tr>
+        <tr><td class="k">Top-up</td><td>Stripe Checkout session (cards, Apple Pay, Google Pay). The wallet is credited only by the signed <code>checkout.session.completed</code> webhook, once per session.</td></tr>
+        <tr><td class="k">Launch</td><td>(fee + max bonus) × videos × creators is held from the wallet; launch is refused if funds are short.</td></tr>
+        <tr><td class="k">Approve</td><td>Base fee moves to the creator as pending; available after 3 days (background sweep).</td></tr>
+        <tr><td class="k">Ad wins</td><td>CTR above benchmark within 14 days → bonus paid automatically to pending.</td></tr>
+        <tr><td class="k">Withdraw</td><td>One Stripe Transfer to the creator’s connected account (idempotency key = payout ID); Stripe pays their bank.</td></tr>
+        <tr><td class="k">Complete</td><td>Unused budget returns to the wallet; unearned bonuses after their 14-day window.</td></tr>
+      </table>
+    </div>
+    <div class="figure" style="margin-top:0">
+      <div class="ft">Where $1,000 of brand spend goes</div>
+      <div class="fs">Illustrative: one US card top-up paid out to two creators in a month</div>
+      <svg viewBox='0 0 300 128' width='100%' role='img' aria-label='Where 1,000 dollars of brand spend goes' xmlns='http://www.w3.org/2000/svg'><rect x='0.0' y='4' width='257.1' height='20' fill='#6e4cff' rx='4'/><rect x='259.1' y='4' width='28.0' height='20' fill='#ff5a36' rx='0'/><rect x='289.1' y='4' width='6.8' height='20' fill='#1baf7a' rx='0'/><rect x='297.9' y='4' width='2.1' height='20' fill='#eda100' rx='4'/><rect x='0' y='37' width='10' height='10' rx='2' fill='#6e4cff'/><text x='16.0' y='46.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#5f5f5b' text-anchor='start' font-weight='400'><tspan font-weight='600' fill='#161615'>$863.70</tspan>  Paid to creators</text><rect x='0' y='58' width='10' height='10' rx='2' fill='#ff5a36'/><text x='16.0' y='67.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#5f5f5b' text-anchor='start' font-weight='400'><tspan font-weight='600' fill='#161615'>$100.00</tspan>  Glink platform fee (proposed 10%)</text><rect x='0' y='79' width='10' height='10' rx='2' fill='#1baf7a'/><text x='16.0' y='88.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#5f5f5b' text-anchor='start' font-weight='400'><tspan font-weight='600' fill='#161615'>$29.30</tspan>  Stripe card processing</text><rect x='0' y='100' width='10' height='10' rx='2' fill='#eda100'/><text x='16.0' y='109.0' font-family='Inter, Arial, sans-serif' font-size='10' fill='#5f5f5b' text-anchor='start' font-weight='400'><tspan font-weight='600' fill='#161615'>$7.00</tspan>  Stripe Connect payouts</text></svg>
+      <div class="src">Assumes Stripe US list pricing (2.9% + $0.30 per card charge; Connect $2 per active account per month + 0.25% + $0.25 per payout) and a proposed 10% platform fee. Verify current pricing; cross-border and currency fees vary by country.</div>
+    </div>
+  </div>
+  <div class="note"><b>Model.</b> “Separate charges and transfers”: the platform collects the payment, records it in the ledger, and transfers to creators when they withdraw. This fits Glink’s held-budget, release-on-approval flow, and lets Glink take its platform fee before the transfer. Creators onboard to <b>Stripe Connect Express</b> — Stripe runs identity verification and stores bank details.</div>
+</section>
+
+<!-- E1 ─ Escrow -->
+<section class="page">
+  <div class="kicker">9 · Automated escrow</div>
+  <h2>Money moves on its own — and only when it should.</h2>
+  <p class="lede">Nobody chases a payment: a background job runs every minute and moves money forward, while the ledger and idempotency keys make sure nothing is paid twice. Built and covered by automated tests.</p>
+  <div style="max-width:90%;margin:0 auto"><svg class='diagram' viewBox='0 0 520 230' role='img' aria-label='Automated escrow flow' xmlns='http://www.w3.org/2000/svg'><defs><marker id='ah' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#9a9a96'/></marker></defs><rect x='4' y='8' width='112' height='46' rx='8' fill='#f2efff' stroke='#6e4cff' stroke-width='1.1'/><text x='60.0' y='29.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Card payment</text><text x='60.0' y='42.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>Stripe Checkout</text><line x1='117' y1='31' x2='133' y2='31' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='134' y='8' width='112' height='46' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='190.0' y='29.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Wallet</text><text x='190.0' y='42.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>credited by webhook</text><line x1='247' y1='31' x2='263' y2='31' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='264' y='8' width='112' height='46' rx='8' fill='#ffeef5' stroke='#f2367a' stroke-width='1.1'/><text x='320.0' y='29.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Held</text><text x='320.0' y='42.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>at campaign launch</text><line x1='377' y1='31' x2='393' y2='31' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='394' y='8' width='112' height='46' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='450.0' y='29.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Submitted</text><text x='450.0' y='42.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>pre-flight checked</text><rect x='394' y='84' width='122' height='46' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='455.0' y='105.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Brand approves</text><text x='455.0' y='118.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>any time</text><rect x='264' y='84' width='120' height='46' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='324.0' y='105.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Auto-approved</text><text x='324.0' y='118.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>day 5 · every check passed</text><line x1='455' y1='55' x2='455' y2='83' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='430' y1='55' x2='360' y2='83' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><rect x='394' y='160' width='122' height='46' rx='8' fill='#fdf4dc' stroke='#c98500' stroke-width='1.1'/><text x='455.0' y='181.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Pending</text><text x='455.0' y='194.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>3-day clearance</text><rect x='264' y='160' width='120' height='46' rx='8' fill='#e8f7f1' stroke='#1baf7a' stroke-width='1.1'/><text x='324.0' y='181.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Available</text><text x='324.0' y='194.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>creator balance</text><rect x='134' y='160' width='118' height='46' rx='8' fill='#fff1ec' stroke='#ff5a36' stroke-width='1.1'/><text x='193.0' y='181.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Auto payout</text><text x='193.0' y='194.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>≥ $20 · Stripe Transfer</text><rect x='4' y='160' width='118' height='46' rx='8' fill='#ffffff' stroke='#d9d8d3' stroke-width='1.1'/><text x='63.0' y='181.0' font-family='Inter, Arial, sans-serif' font-size='9.5' font-weight='600' fill='#161615' text-anchor='middle'>Creator bank</text><text x='63.0' y='194.0' font-family='Inter, Arial, sans-serif' font-size='8.6' fill='#5f5f5b' text-anchor='middle'>Connect payout</text><line x1='455' y1='131' x2='455' y2='159' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='330' y1='131' x2='430' y2='159' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='393' y1='183' x2='385' y2='183' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='263' y1='183' x2='253' y2='183' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><line x1='133' y1='183' x2='123' y2='183' stroke='#9a9a96' stroke-width='1.2' marker-end='url(#ah)'/><text x='4' y='100' font-family='Inter, Arial, sans-serif' font-size='8.4' fill='#5f5f5b'>Day 2: brand reminded once.</text><text x='4' y='113' font-family='Inter, Arial, sans-serif' font-size='8.4' fill='#5f5f5b'>Failed checks: never auto-approved —</text><text x='4' y='125' font-family='Inter, Arial, sans-serif' font-size='8.4' fill='#5f5f5b'>the brand is asked to decide.</text><text x='4' y='224' font-family='Inter, Arial, sans-serif' font-size='8.2' fill='#5f5f5b'>Every step is a ledger entry; webhooks and transfers are idempotent, so retries never double-pay.</text></svg></div>
+  <table style="margin-top:3mm">
+    <tr><th style="width:21%">Automation</th><th style="width:27%">Trigger</th><th>What happens</th><th style="width:16%">Setting</th></tr>
+    <tr><td class="k">Review reminder</td><td>Video waiting 2 days</td><td>Brand reminded once, told when auto-approval will happen</td><td><code>REVIEW_REMINDER_DAYS</code></td></tr>
+    <tr><td class="k">Auto-approval</td><td>Waiting 5 days, all checks passed</td><td>Approved and fee released to the creator; brand notified. Videos with failed checks are never auto-approved — the brand is asked to decide</td><td><code>AUTO_APPROVE_DAYS</code></td></tr>
+    <tr><td class="k">Clearance</td><td>3 days after approval</td><td>Earnings move from pending to available (protects against disputes)</td><td>—</td></tr>
+    <tr><td class="k">Bonus</td><td>Results beat the brand’s rule</td><td>Bonus paid automatically — any metric, threshold and window the brand chose</td><td>per campaign</td></tr>
+    <tr><td class="k">Auto-payout</td><td>Available ≥ $20, bank connected</td><td>Stripe Transfer to the creator’s account; creators can switch it off</td><td><code>AUTO_PAYOUT_MIN</code></td></tr>
+    <tr><td class="k">Return unused</td><td>Campaign completes; bonus window closes</td><td>Unspent budget and unearned bonuses return to the wallet</td><td>—</td></tr>
+  </table>
+  <div class="grid2">
+    <div class="card"><h4>How others do it</h4><p><b>Upwork</b> releases a fixed-price milestone automatically if the client doesn’t respond within 14 days. <b>Fiverr</b> auto-completes an order 3 days after delivery and clears seller funds after a holding period. Glink uses 5 days to approve and 3 days to clear.</p></div>
+    <div class="card"><h4>Safe by construction</h4><p>Webhook events stored once; a checkout credits once; each transfer has an idempotency key; one payout in flight per creator; failed payouts retry on the next run and never lose earnings. At scale the same jobs move to a Redis queue (BullMQ).</p></div>
+  </div>
+</section>
+<!-- 11 ─ Payments 2 -->
+<section class="page">
+  <div class="kicker">10 · Payment controls and compliance</div>
+  <h2>Correct under retries, auditable, and ready for more markets.</h2>
+  <div class="grid2" style="margin-top:3mm">
+    <div class="card"><h4>Built today</h4>
+      <ul class="ticks" style="--dot:var(--aqua);margin-top:1.5mm">
+        <li>Webhooks verified by signature; each event stored once (<code>stripe_events</code>).</li>
+        <li>A checkout session can credit a wallet only once (unique <code>external_id</code>).</li>
+        <li>Transfers use idempotency keys; one withdrawal in flight per creator.</li>
+        <li>Payout account readiness tracked from <code>account.updated</code>.</li>
+        <li>Friendly handling when Stripe’s available balance is short — earnings stay safe.</li>
+        <li>Automated payment and escrow tests run on every change.</li>
+      </ul>
+    </div>
+    <div class="card"><h4>Proposed (Phase 1 and 5)</h4>
+      <ul class="ticks" style="margin-top:1.5mm">
+        <li><b>Platform fee</b> configured per plan and shown on every payout statement.</li>
+        <li><b>Refunds</b> of unused wallet balance to the original card, recorded in the ledger.</li>
+        <li><b>Disputes:</b> <code>charge.dispute.created</code> freezes the disputed amount and alerts the owner.</li>
+        <li><b>Nightly reconciliation</b> of ledger totals against Stripe balance transactions, with alerts on any difference.</li>
+        <li><b>Statements and receipts</b> (PDF) for brands; earnings statements for creators.</li>
+        <li><b>Audit log</b> of every money action and who performed it.</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Compliance</h3>
+  <table>
+    <tr><th style="width:22%">Topic</th><th>Approach</th></tr>
+    <tr><td class="k">Card data (PCI DSS)</td><td>Card entry happens on Stripe-hosted Checkout, so Glink’s scope is the lightest (SAQ A). No card numbers touch Glink servers.</td></tr>
+    <tr><td class="k">Identity (KYC)</td><td>Stripe Connect verifies creators and screens payouts; Glink stores only the connected-account ID and readiness.</td></tr>
+    <tr><td class="k">Holding funds</td><td>Funds sit in the platform’s Stripe balance, tracked per brand and campaign. Wording such as “escrow” and holding periods to be confirmed with legal counsel per launch country.</td></tr>
+    <tr><td class="k">Tax</td><td>Stripe’s tax forms for creator earnings where applicable (e.g. 1099 in the US); VAT/sales tax on platform fees via Stripe Tax if required.</td></tr>
+  </table>
+  <h3>More markets: a provider adapter</h3>
+  <p>Stripe is not available to platforms based in Nigeria and much of Africa, and payouts to some countries are restricted. We will put Stripe behind a small <code>PaymentProvider</code> interface — <i>create top-up · verify webhook · onboard payee · transfer · refund</i> — and add <b>Paystack</b> (cards, bank transfer and local payouts in Nigeria, Ghana, Kenya and South Africa) as a second implementation. Each brand and creator is routed by country and currency; the ledger records the currency of every entry.</p>
+  <div class="grid3">
+    <div class="card"><h4>Stripe</h4><p>US, UK, EU, Canada, Australia and more; cards, wallets; Connect payouts.</p></div>
+    <div class="card"><h4>Paystack</h4><p>Nigeria, Ghana, Kenya, South Africa; cards, bank transfer, USSD; transfers to local banks.</p></div>
+    <div class="card"><h4>Later, if needed</h4><p>Flutterwave for wider African coverage and mobile-money payouts.</p></div>
+  </div>
+</section>
+
+<!-- 12 ─ Security -->
+<section class="page">
+  <div class="kicker">11 · Security and privacy</div>
+  <h2>Secure by default, with less to protect.</h2>
+  <p class="lede">The best protection is not holding sensitive data: card and bank details stay with Stripe, and videos are private by default. What Glink does hold is protected at every layer.</p>
+  <table>
+    <tr><th style="width:20%">Area</th><th style="width:46%">Built today</th><th>Proposed</th></tr>
+    <tr><td class="k">Passwords</td><td>scrypt with a per-user salt, constant-time comparison, minimum 8 characters</td><td>Breached-password check at sign-up</td></tr>
+    <tr><td class="k">Sessions</td><td>Random 256-bit token in an HttpOnly, SameSite=Lax cookie (Secure on HTTPS); only a SHA-256 hash stored; 30-day expiry</td><td>Session list with “sign out other devices”</td></tr>
+    <tr><td class="k">Sign-in</td><td>Google, Facebook, Apple; accounts link only through verified emails</td><td>Two-factor authentication (TOTP) for brand owners and anyone who can spend</td></tr>
+    <tr><td class="k">Abuse</td><td>Rate limits: 10 log-in attempts per email and address per 15 minutes; limits on sign-up and reset</td><td>Shared limits in Redis; bot protection on sign-up (e.g. Turnstile)</td></tr>
+    <tr><td class="k">Requests</td><td>Same-origin check on every change; security headers; product-URL fetcher blocks internal addresses</td><td>Strict Content-Security-Policy</td></tr>
+    <tr><td class="k">Access</td><td>Every request checked against the signed-in user and team role</td><td>Audit log for money and permission changes</td></tr>
+    <tr><td class="k">Supply chain</td><td>Lockfile, pinned versions, secrets kept out of the repository</td><td>Dependabot and secret scanning; signed builds in CI</td></tr>
+    <tr><td class="k">Assurance</td><td>36 automated tests including cross-site, data-isolation and escrow cases</td><td>External penetration test before public launch</td></tr>
+  </table>
+  <div class="grid2">
+    <div class="card"><h4>Privacy and data protection <span class="pill p-plan">Phase 1 &amp; 5</span></h4><p>Designed for GDPR (EU/UK) and Nigeria’s NDPA: a privacy policy and terms at launch; self-serve data export and account deletion; data minimisation; processors (Stripe, Resend, Cloudflare, AI and speech providers) listed with data-processing agreements. Creator videos will not be used to train third-party models.</p></div>
+    <div class="card"><h4>Content rights <span class="pill p-plan">Phase 1</span></h4><p>Each campaign will record the licence a brand receives (platforms, duration, paid usage, territories), which creators accept before filming. Approval and payment stamp the licence start; expiry reminders help brands stay compliant; paid-partnership disclosure (#ad) becomes a default brief item.</p></div>
+  </div>
+</section>
+
+<!-- 14 ─ Roadmap -->
+<section class="page">
+  <div class="kicker">12 · Roadmap</div>
+  <h2>Sixteen weeks to a production platform at scale.</h2>
+  <p class="lede">Phases overlap to keep two engineers busy without blocking each other. Each phase ends in something usable in production, with explicit acceptance criteria.</p>
+  <div class="figure">
+    <div class="ft">Delivery plan</div>
+    <div class="fs">Weeks from kick-off; indicative effort for two full-stack engineers plus part-time design and QA</div>
+    <svg viewBox='0 0 520 166' width='100%' role='img' aria-label='Delivery roadmap in weeks' xmlns='http://www.w3.org/2000/svg'><line x1='170.0' x2='170.0' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='170.0' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W0</text><line x1='212.5' x2='212.5' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='212.5' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W2</text><line x1='255.0' x2='255.0' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='255.0' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W4</text><line x1='297.5' x2='297.5' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='297.5' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W6</text><line x1='340.0' x2='340.0' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='340.0' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W8</text><line x1='382.5' x2='382.5' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='382.5' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W10</text><line x1='425.0' x2='425.0' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='425.0' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W12</text><line x1='467.5' x2='467.5' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='467.5' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W14</text><line x1='510.0' x2='510.0' y1='16' y2='162' stroke='#e7e6e2' stroke-width='1'/><text x='510.0' y='12.0' font-family='Inter, Arial, sans-serif' font-size='9.5' fill='#9a9a96' text-anchor='middle' font-weight='400'>W16</text><text x='160.0' y='34.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='end' font-weight='400'>1  Production hardening</text><rect x='171.0' y='22' width='61.8' height='16' rx='4' fill='#6e4cff'/><text x='160.0' y='62.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='end' font-weight='400'>2  Video storage & delivery</text><rect x='213.5' y='50' width='104.2' height='16' rx='4' fill='#ff5a36'/><text x='160.0' y='90.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='end' font-weight='400'>3  Scale foundations</text><rect x='277.2' y='78' width='104.2' height='16' rx='4' fill='#1baf7a'/><text x='160.0' y='118.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='end' font-weight='400'>4  Intelligence & integrations</text><rect x='341.0' y='106' width='125.5' height='16' rx='4' fill='#eda100'/><text x='160.0' y='146.0' font-family='Inter, Arial, sans-serif' font-size='11' fill='#5f5f5b' text-anchor='end' font-weight='400'>5  Launch readiness</text><rect x='426.0' y='134' width='83.0' height='16' rx='4' fill='#e87ba4'/></svg>
+  </div>
+  <table>
+    <tr><th style="width:24%">Phase</th><th style="width:40%">Scope</th><th>Done when</th></tr>
+    <tr><td class="k">1 · Production hardening<br><span style="font-weight:400;color:var(--muted)">weeks 0–3</span></td><td>Render production with disk (or managed Postgres); Stripe live (top-ups, payouts, platform fee, refunds); Resend; error tracking and uptime; CI; staging; terms and privacy</td><td>A real brand tops up, a real creator is paid out, and a restore from backup is rehearsed</td></tr>
+    <tr><td class="k">2 · Video storage &amp; delivery<br><span style="font-weight:400;color:var(--muted)">weeks 2–7</span></td><td>R2 resumable uploads, ffprobe verification, 720p renditions and posters, signed playback, lifecycle rules, migration of existing files</td><td>2 GB upload survives a dropped connection; playback starts under 2 s; no video bytes pass through app servers</td></tr>
+    <tr><td class="k">3 · Scale foundations<br><span style="font-weight:400;color:var(--muted)">weeks 5–10</span></td><td>Postgres migration with data copy, Redis pub/sub and shared rate limits, BullMQ workers, two web instances, zero-downtime deploys</td><td>Load test at 10× pilot traffic within targets; failover of one instance with no user impact</td></tr>
+    <tr><td class="k">4 · Intelligence &amp; integrations<br><span style="font-weight:400;color:var(--muted)">weeks 8–14</span></td><td>Speech-to-text pre-flight, TikTok and Meta results import, verified channels, insight screens built from real data</td><td>Bonuses and strengths update from imported results with no manual entry</td></tr>
+    <tr><td class="k">5 · Launch readiness<br><span style="font-weight:400;color:var(--muted)">weeks 12–16</span></td><td>Penetration test and fixes, two-factor auth, audit log, reconciliation, Paystack adapter if launching in Africa, documentation</td><td>Security findings closed; reconciliation clean for 14 days; launch checklist signed off</td></tr>
+  </table>
+</section>
+
+<!-- 15 ─ Risks -->
+<section class="page">
+  <div class="kicker">13 · Risks, decisions and next steps</div>
+  <h2>What could go wrong, and what we need from you.</h2>
+  <table>
+    <tr><th style="width:27%">Risk</th><th style="width:12%">Likelihood</th><th style="width:11%">Impact</th><th>Mitigation</th></tr>
+    <tr><td class="k">Payment provider not available in a launch country</td><td>High (Africa)</td><td>High</td><td>Provider adapter; Paystack for Nigeria, Ghana, Kenya, South Africa; decide launch countries early</td></tr>
+    <tr><td class="k">Stripe balance too low for instant payouts</td><td>Medium</td><td>Medium</td><td>Payouts wait for settled funds; clear creator messaging; optional platform float</td></tr>
+    <tr><td class="k">Large uploads fail on mobile networks</td><td>Medium</td><td>High</td><td>Resumable multipart uploads; retry per part; size and length guidance in the brief</td></tr>
+    <tr><td class="k">AI or speech provider outage or cost spike</td><td>Medium</td><td>Low</td><td>Deterministic checks always run; per-environment switches; usage budgets and alerts</td></tr>
+    <tr><td class="k">Ad-platform API approval delays (TikTok, Meta)</td><td>High</td><td>Medium</td><td>Apply in Phase 1; manual results entry remains as fallback</td></tr>
+    <tr><td class="k">Data loss on the single-server pilot</td><td>Low</td><td>High</td><td>Disk snapshots + nightly copies off-server; Postgres PITR in Phase 3</td></tr>
+    <tr><td class="k">Regulatory treatment of held funds</td><td>Low–Med</td><td>High</td><td>Legal review per country before launch; keep funds in Stripe/Paystack balances</td></tr>
+  </table>
+  <h3>Decisions needed</h3>
+  <div class="grid2">
+    <div class="card"><h4>Business</h4>
+      <ul class="ticks" style="margin-top:1.5mm">
+        <li>Launch countries and currencies (drives Stripe vs Paystack).</li>
+        <li>Platform fee and plan pricing; who absorbs card fees.</li>
+        <li>Default content licence offered to brands.</li>
+      </ul></div>
+    <div class="card"><h4>Technical</h4>
+      <ul class="ticks" style="--dot:var(--coral);margin-top:1.5mm">
+        <li>Hosting: stay on Render, or plan an AWS move at scale.</li>
+        <li>Postgres provider (Neon, Render, Supabase).</li>
+        <li>Speech-to-text provider; enable AI frame checks in production.</li>
+      </ul></div>
+  </div>
+  <h3>Next two weeks</h3>
+  <ul class="ticks" style="--dot:var(--aqua)">
+    <li>Production service on Render with a persistent disk, a custom domain and HTTPS.</li>
+    <li>Stripe account activation and Connect platform profile; first live top-up and payout.</li>
+    <li>Resend domain verification; error tracking and uptime alerts; CI pipeline.</li>
+    <li>Apply for TikTok and Meta marketing API access; start the R2 upload spike.</li>
+  </ul>
+  <div class="note" style="margin-top:4mm;background:linear-gradient(115deg,var(--t-coral),var(--t-violet))"><b>In one line:</b> launch the pilot on what is built, switch on real payments and email, move video to object storage, then scale the data layer when the numbers say so.</div>
+</section>
+
+</body>
+</html>
