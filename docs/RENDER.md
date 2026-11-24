@@ -102,7 +102,7 @@ Add these on the service’s **Environment** page. Each save redeploys the app. 
 
 **Stripe (card top-ups and creator payouts)**
 - `STRIPE_SECRET_KEY`: from Stripe → Developers → API keys. Use `sk_test_…` until you’ve tried everything.
-- In Stripe → Developers → Webhooks, add the endpoint `https://YOUR-ADDRESS/api/stripe/webhook` with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded` and `account.updated`. Include connected-account events. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
+- In Stripe → Developers → Webhooks, add the endpoint `https://YOUR-ADDRESS/api/stripe/webhook` with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `account.updated` and `charge.dispute.created`. Include connected-account events. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
 - `STRIPE_CURRENCY` defaults to `usd`.
 - Check: `/api/health` shows `"payments":"stripe"`. As a brand owner, Billing → *Add funds* → pay with test card `4242 4242 4242 4242`; the wallet updates within seconds. Stripe’s webhook page should show the delivery with a `200` response.
 

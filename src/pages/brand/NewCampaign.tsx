@@ -9,7 +9,8 @@ import {
   Button, ErrorBanner, Field, Input, KV, Label, ListEditor, PageHeader, Panel, Segmented, Select, useToast,
 } from '../../components/kit'
 import {
-  audienceSuggestions, BONUS_METRIC_KEYS, BONUS_METRICS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, GOAL_NAMES, GOALS, goalsFor,
+  audienceSuggestions, BONUS_METRIC_KEYS, BONUS_METRICS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, describeLicence, GOAL_NAMES, GOALS, goalsFor,
+  USAGE_PLATFORMS, USAGE_TERMS,
   type BonusMetric, type Campaign, type FieldErrors, type Goal, type Sourcing,
 } from '../../data/market'
 import { products as productCatalog, TODAY } from '../../data/seed'
@@ -54,6 +55,7 @@ export default function NewCampaign() {
     count: 2, aspectRatio: '9:16', minSec: 15, maxSec: 30, rawFootage: false,
     sourcing: 'auto' as Sourcing, baseFee: 380, bonusAmount: 150, bonusMetric: 'ctr' as BonusMetric, bonusThreshold: 1.8, bonusWindowDays: 14, creatorsWanted: 4,
     prizes: [1500, 750, 400],
+    usagePlatforms: ['TikTok', 'Instagram', 'Facebook'] as string[], usageMonths: 12, paidUsage: true,
   })
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD(x => ({ ...x, [k]: v }))
 
@@ -75,10 +77,15 @@ export default function NewCampaign() {
     benchmarkCtr: d.bonusMetric === 'ctr' ? d.bonusThreshold : 1.8, bonusMetric: d.bonusMetric, bonusThreshold: d.bonusThreshold, bonusWindowDays: d.bonusWindowDays,
     prizes: contest ? d.prizes : [],
     creatorsWanted: contest ? d.prizes.length : d.creatorsWanted, sourcing: d.sourcing, timeline: buildTimeline(d.deadline, d.sourcing),
+    usagePlatforms: d.usagePlatforms, usageMonths: d.usageMonths, paidUsage: d.paidUsage,
   }), [d, contest, suggestedName])
+  const licenceText = describeLicence(d.usagePlatforms, d.usageMonths, d.paidUsage)
 
   const budget = contest ? d.prizes.reduce((a, b) => a + b, 0) : d.baseFee * d.count * d.creatorsWanted
   const maxBonus = contest ? 0 : d.bonusAmount * d.count * d.creatorsWanted
+  const feePct = state.billing.feePct
+  const platformFee = Math.round((budget + maxBonus) * feePct) / 100
+  const totalHold = budget + maxBonus + platformFee
 
   const validate = (s: number): FieldErrors => {
     const e: FieldErrors = {}
@@ -97,13 +104,14 @@ export default function NewCampaign() {
       if (d.storyFlow.length < 2) e.storyFlow = 'Add at least two story steps.'
       if (d.minSec >= d.maxSec) e.length = 'Minimum length must be shorter than maximum.'
     }
-    if (s === 2 && contest && budget > state.wallet) e.wallet = `The prize pool needs ${money(budget)} in escrow but your wallet has ${money(state.wallet)}. Add funds in Billing.`
+    if (s === 2 && !d.usagePlatforms.length) e.usagePlatforms = 'Choose at least one place the videos may be used.'
+    if (s === 2 && contest && totalHold > state.wallet) e.wallet = `The prize pool${feePct ? ' and platform fee' : ''} needs ${money(totalHold)} in escrow but your wallet has ${money(state.wallet)}. Add funds in Billing.`
     if (s === 2 && !contest) {
       if (d.baseFee < 50) e.baseFee = 'Base fee must be at least $50.'
       if (d.creatorsWanted < 1) e.creatorsWanted = 'You need at least one creator.'
       if (d.bonusAmount > 0 && !(d.bonusThreshold > 0)) e.bonusThreshold = 'Enter the result that earns the bonus.'
       if (!(d.bonusWindowDays >= 1 && d.bonusWindowDays <= 90)) e.bonusWindowDays = 'Choose a window between 1 and 90 days.'
-      if (budget + maxBonus > state.wallet) e.wallet = `This needs ${money(budget + maxBonus)} in escrow (fees plus maximum bonuses) but your wallet has ${money(state.wallet)}. Lower the budget or add funds in Billing.`
+      if (totalHold > state.wallet) e.wallet = `This needs ${money(totalHold)} in escrow (creator fees, maximum bonuses${feePct ? ' and the platform fee' : ''}) but your wallet has ${money(state.wallet)}. Lower the budget or add funds in Billing.`
     }
     return e
   }
@@ -135,7 +143,7 @@ export default function NewCampaign() {
     } finally { setBusy(false) }
   }
 
-  const previewCampaign = { ...draft, id: 'preview', brandId: state.brand.id, brandName: state.brand.name, status: 'draft', createdAt: TODAY, deadline: d.deadline } as Campaign
+  const previewCampaign = { ...draft, id: 'preview', brandId: state.brand.id, brandName: state.brand.name, status: 'draft', createdAt: TODAY, deadline: d.deadline, licence: licenceText } as Campaign
 
   return (
     <>
@@ -324,11 +332,43 @@ export default function NewCampaign() {
                       <Field label="Creators wanted" htmlFor="wanted" error={errors.creatorsWanted}><Input id="wanted" type="number" min={1} max={20} value={d.creatorsWanted} onChange={e => set('creatorsWanted', +e.target.value)} className="max-w-[140px]" invalid={!!errors.creatorsWanted} /></Field>
                     </>
                   )}
+                  <div className="rounded-xl border border-line p-4">
+                    <div className="text-[14px] font-medium text-fg">Usage rights</div>
+                    <div className="mb-3 text-[12.5px] text-muted">The licence you get for every video you pay for. Creators see it before they accept.</div>
+                    <Field label="Where you may use the videos" error={errors.usagePlatforms}>
+                      <div className="flex flex-wrap gap-2">
+                        {USAGE_PLATFORMS.map(p => {
+                          const on = d.usagePlatforms.includes(p)
+                          return (
+                            <button key={p} type="button" aria-pressed={on} onClick={() => set('usagePlatforms', on ? d.usagePlatforms.filter(x => x !== p) : [...d.usagePlatforms, p])}
+                              className={cx('rounded-full border px-3 py-1.5 text-[13px] transition-colors', on ? 'border-transparent bg-primary text-on-primary' : 'border-line text-fg-2 hover:border-line-strong')}>
+                              {on && <Check size={12} className="-ml-0.5 mr-1 inline" />}{p}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </Field>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <Field label="For how long" htmlFor="term">
+                        <Select id="term" value={d.usageMonths} onChange={e => set('usageMonths', +e.target.value)}>
+                          {USAGE_TERMS.map(t => <option key={t} value={t}>{t === 0 ? 'No end date (perpetual)' : `${t} months`}</option>)}
+                        </Select>
+                      </Field>
+                      <Field label="Paid ads">
+                        <Segmented cols={2} value={d.paidUsage ? 'yes' : 'no'} onChange={v => set('paidUsage', v === 'yes')} options={[
+                          { value: 'yes', label: 'Allowed', hint: 'Run as ads' },
+                          { value: 'no', label: 'Organic only', hint: 'Posts, no ads' },
+                        ]} />
+                      </Field>
+                    </div>
+                    <p className="mt-3 rounded-lg bg-tint-lime px-3 py-2 text-[13px] text-fg">{licenceText}</p>
+                  </div>
                   <div className="rounded-xl bg-subtle p-4 text-[13.5px]">
                     <div className="flex justify-between"><span className="text-muted">{contest ? 'Prize pool' : `Base: ${money(d.baseFee)} × ${d.count} videos × ${d.creatorsWanted} creators`}</span><span className="font-medium text-fg">{money(budget)}</span></div>
                     {!contest && <div className="mt-1 flex justify-between"><span className="text-muted">Bonuses, only if earned (max)</span><span className="text-fg">{money(maxBonus)}</span></div>}
-                    {!contest && <div className="mt-1 flex justify-between border-t border-line pt-1"><span className="text-muted">Held in escrow at launch</span><span className="font-medium text-fg">{money(budget + maxBonus)}</span></div>}
-                    <div className="mt-1 flex justify-between"><span className="text-muted">Wallet balance</span><span className={budget + maxBonus > state.wallet ? 'text-danger' : 'text-fg'}>{money(state.wallet)}</span></div>
+                    {feePct > 0 && <div className="mt-1 flex justify-between"><span className="text-muted">Glink platform fee ({feePct}%, only on what you pay out)</span><span className="text-fg">{money(platformFee)}</span></div>}
+                    <div className="mt-1 flex justify-between border-t border-line pt-1"><span className="text-muted">Held in escrow at launch</span><span className="font-medium text-fg">{money(totalHold)}</span></div>
+                    <div className="mt-1 flex justify-between"><span className="text-muted">Wallet balance</span><span className={totalHold > state.wallet ? 'text-danger' : 'text-fg'}>{money(state.wallet)}</span></div>
                   </div>
                 </>
               )}
@@ -352,10 +392,12 @@ export default function NewCampaign() {
                     <KV label="Sourcing">{d.sourcing === 'auto' ? 'Auto-match' : d.sourcing === 'handpick' ? 'Hand-pick' : 'Contest'}</KV>
                     <KV label="Budget">{money(budget)}{!contest && ` + up to ${money(maxBonus)} in bonuses`}</KV>
                     {!contest && <KV label="Bonus rule">{bonusRuleText} of approval</KV>}
+                    {feePct > 0 && <KV label="Platform fee">{feePct}% · up to {money(platformFee)}</KV>}
+                    <KV label="Usage rights">{licenceText}</KV>
                   </div>
                   <div className="rounded-xl border border-line px-4 pb-2 pt-5"><SubmissionTimeline milestones={draft.timeline} /></div>
                   <p className="flex items-start gap-2 text-[13px] text-muted"><Lock size={14} className="mt-0.5 shrink-0" />
-                    {contest ? `The ${money(budget)} prize pool is held in escrow and released to winners.` : `${money(budget + maxBonus)} (fees plus maximum bonuses) is held in escrow when you launch. Fees are released as you approve videos; unearned bonuses return to your wallet.`}
+                    {contest ? `${money(totalHold)} (the prize pool${feePct ? ' plus platform fee' : ''}) is held in escrow and released to winners.` : `${money(totalHold)} is held in escrow when you launch. Creator fees are released as you approve videos; unearned bonuses${feePct ? ' and their share of the platform fee' : ''} return to your wallet.`}
                   </p>
                 </>
               )}

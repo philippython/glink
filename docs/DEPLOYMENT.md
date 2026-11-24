@@ -66,6 +66,7 @@ All settings are environment variables. On a server, put them in a `.env` file i
 | `RESEND_API_KEY`, `EMAIL_FROM` | Sends password-reset and team-invite emails (section 9) |
 | `ANTHROPIC_API_KEY` | AI checks of video frames and product pages. Everything works without it |
 | `SEED_DEMO` | `true` creates demo accounts with password `demo1234` on an **empty** database. Default: **off** in production. Use it only on staging |
+| `PLATFORM_FEE_PCT` | Glink’s fee in percent, charged to brands on top of what creators are paid (default `10`). Each campaign keeps the rate it launched with |
 | `ALLOW_TEST_FUNDS` | `true` lets brand owners add pretend money, and gives new brands a $5,000 test credit. Default: **off** in production. Use only for testing or invoiced pilots |
 
 Never commit `.env`; it is already in `.gitignore`.
@@ -231,7 +232,7 @@ How the money moves: a brand pays on Stripe’s page → Stripe confirms the pay
 3. **API key:** *Developers* → *API keys* → copy the **Secret key** (`sk_test_…`) into `STRIPE_SECRET_KEY`.
 4. **Webhook:** *Developers* → *Webhooks* → *Add endpoint*:
    - URL: `https://YOUR-DOMAIN/api/stripe/webhook`
-   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded` and `account.updated`
+   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `account.updated` and `charge.dispute.created`
    - Also tick **Listen to events on Connected accounts**, so `account.updated` arrives when a creator finishes setup. Some dashboard versions do this as a second endpoint with the same URL; that’s fine.
    - Copy the **Signing secret** (`whsec_…`) into `STRIPE_WEBHOOK_SECRET`. With two endpoints there are two secrets. Glink checks one, so use a single endpoint where your dashboard allows it.
 5. **Currency:** `STRIPE_CURRENCY=usd` by default. Use the currency your Stripe account settles in.

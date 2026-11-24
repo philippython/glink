@@ -1,4 +1,4 @@
-import { CreditCard, Lock, Plus } from 'lucide-react'
+import { CreditCard, Lock, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Empty, PageHeader, Panel, Pill, SectionHead, Stat, StatRow, useToast, type Tone } from '../../components/kit'
@@ -8,17 +8,19 @@ import { errorMessage } from '../../lib/api'
 import { cx, fmtDate, money } from '../../lib/format'
 
 const statusLabel: Record<Payment['status'], [string, Tone]> = { pending: ['Pending', 'warn'], available: ['Released', 'success'], paid_out: ['Paid out', 'success'] }
-const kindLabel = { topup: 'Top-up', hold: 'Escrow hold', refund: 'Returned to wallet' }
+const kindLabel = { topup: 'Top-up', hold: 'Escrow hold', refund: 'Returned to wallet', withdrawal: 'Refunded' }
 
 const PRESETS = [500, 1000, 2500, 5000]
 
 export default function Billing() {
-  const { state, topUp, checkout, refresh, config } = useStore()
+  const { state, topUp, checkout, refresh, config, refundWallet } = useStore()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [busy, setBusy] = useState(false)
   const [amount, setAmount] = useState(1000)
   const [paying, setPaying] = useState(false)
+  const [refundAmount, setRefundAmount] = useState('')
+  const [refunding, setRefunding] = useState(false)
   const paid = state.payments.reduce((a, p) => a + p.base + p.bonus, 0)
   const byCreator = state.creators.map(c => ({ c, rows: state.payments.filter(p => p.creatorId === c.id) })).filter(x => x.rows.length)
   const owner = state.myRole === 'Owner'
@@ -47,6 +49,13 @@ export default function Billing() {
     setBusy(true)
     try { await topUp(1000); toast('$1,000 in test funds added') } catch (e) { toast(errorMessage(e)) } finally { setBusy(false) }
   }
+  const refund = async () => {
+    const n = Number(refundAmount)
+    if (!(n >= 1) || n > state.wallet) { toast(`Enter an amount between $1 and ${money(state.wallet)}.`); return }
+    if (!window.confirm(`Refund ${money(n)} ${cards ? 'to your card' : 'of test funds'}? It leaves your wallet straight away.`)) return
+    setRefunding(true)
+    try { const r = await refundWallet(n); setRefundAmount(''); toast(`${money(r)} refunded${cards ? ' — it reaches your card in 5–10 days' : ''}`) } catch (e) { toast(errorMessage(e)) } finally { setRefunding(false) }
+  }
   const pay = async () => {
     setPaying(true)
     try { await checkout(amount) } catch (e) { toast(errorMessage(e)); setPaying(false) }
@@ -56,10 +65,11 @@ export default function Billing() {
     <>
       <PageHeader title="Billing" subtitle="Budgets are held in escrow when a campaign launches and released when you approve a video."
         actions={owner && config.testFunds && <Button variant="secondary" onClick={() => void add()} loading={busy}><Plus size={15} /> Add $1,000 test funds</Button>} />
-      <StatRow cols={3}>
+      <StatRow cols={4}>
         <Stat label="Wallet balance" value={money(state.wallet)} sub="Available for new campaigns" />
         <Stat label="Held in escrow" value={money(state.billing.held)} sub="Reserved for live campaigns" />
         <Stat label="Paid to creators" value={money(paid)} sub="All time, including bonuses" />
+        <Stat label="Platform fees" value={money(state.billing.feesPaid)} sub={state.billing.feePct ? `${state.billing.feePct}% of what you pay creators` : 'No fee on your plan'} />
       </StatRow>
 
       {cards && owner && (
@@ -88,7 +98,19 @@ export default function Billing() {
           </div>
         </Panel>
       )}
-      {!owner && <p className="mt-3 text-[12.5px] text-faint">Only the brand owner can add funds.</p>}
+      {owner && config.payments !== 'none' && state.wallet > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-line px-4 py-3 text-[13px]">
+          <Undo2 size={15} className="text-muted" />
+          <span className="min-w-0 flex-1 text-muted">Don’t need the rest of your balance? {cards ? 'Refund it to the card you paid with.' : 'Remove test funds from your wallet.'} Money held for live campaigns isn’t affected.</span>
+          <label className="flex h-9 items-center gap-1 rounded-full border border-line-strong bg-surface pl-3.5 pr-1">
+            <span className="text-muted">$</span>
+            <input type="number" min={1} max={state.wallet} value={refundAmount} placeholder={String(Math.floor(state.wallet))} onChange={e => setRefundAmount(e.target.value)} aria-label="Refund amount"
+              className="w-24 bg-transparent text-fg outline-none" />
+          </label>
+          <Button size="sm" variant="secondary" onClick={() => void refund()} loading={refunding}>Refund</Button>
+        </div>
+      )}
+      {!owner && <p className="mt-3 text-[12.5px] text-faint">Only the brand owner can add or refund funds.</p>}
       {owner && config.payments === 'none' && <p className="mt-3 text-[12.5px] text-faint">Adding funds will be available once card payments are connected.</p>}
 
       <div className="mt-10 grid gap-8 lg:grid-cols-2">

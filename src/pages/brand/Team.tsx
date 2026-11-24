@@ -1,9 +1,10 @@
 import { X } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { Avatar, Button, Field, Input, PageHeader, Panel, Pill, SectionHead, Select, useToast } from '../../components/kit'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Avatar, Button, Empty, Field, Input, PageHeader, Panel, Pill, SectionHead, Select, useToast, type Tone } from '../../components/kit'
 import type { TeamMember } from '../../data/market'
-import { useStore } from '../../data/store'
+import { type AuditEntry, useStore } from '../../data/store'
 import { errorMessage } from '../../lib/api'
+import { money, timeAgo } from '../../lib/format'
 
 const roles: { role: TeamMember['role']; text: string }[] = [
   { role: 'Owner', text: 'Everything, including billing and team.' },
@@ -69,6 +70,50 @@ export default function Team() {
           </Panel>
         </section>
       </div>
+      {owner && <ActivityLog />}
     </>
+  )
+}
+
+const ACTIONS: Record<string, [string, Tone]> = {
+  'wallet.topup': ['Funds added', 'success'], 'wallet.refund': ['Refunded', 'neutral'], 'wallet.dispute': ['Dispute', 'danger'],
+  'campaign.launch': ['Campaign launched', 'warn'], 'review.approve': ['Video approved', 'success'], 'contest.winner': ['Winner picked', 'success'],
+  'payment.base': ['Creator paid', 'neutral'], 'payment.bonus': ['Bonus paid', 'neutral'], 'payment.prize': ['Prize paid', 'neutral'],
+  'team.invite': ['Teammate invited', 'warn'], 'team.remove': ['Teammate removed', 'danger'],
+}
+
+/** Every change to money or permissions: who did it and when. Owners only. */
+function ActivityLog() {
+  const { state, loadAudit } = useStore()
+  const [rows, setRows] = useState<AuditEntry[] | null>(null)
+  const [error, setError] = useState('')
+  // Reload whenever money or the team changes.
+  const key = `${state.billing.ledger.length}-${state.team.length}-${state.payments.length}`
+  useEffect(() => {
+    let live = true
+    loadAudit().then(r => { if (live) setRows(r) }, e => { if (live) setError(errorMessage(e)) })
+    return () => { live = false }
+  }, [loadAudit, key])
+  return (
+    <section className="mt-10">
+      <SectionHead title="Activity log" />
+      <p className="-mt-2 mb-3 text-[13px] text-muted">Every change to money or permissions: who made it and when. Only owners can see this.</p>
+      <Panel pad={false}>
+        {error ? <Empty text={error} /> : rows === null ? <Empty text="Loading…" /> : rows.length === 0 ? <Empty text="Nothing yet. Top-ups, launches, approvals, payments and team changes appear here." /> : rows.slice(0, 60).map(r => {
+          const [label, tone] = ACTIONS[r.action] ?? [r.action, 'neutral' as Tone]
+          return (
+            <div key={r.id} className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3 last:border-0">
+              <Pill tone={tone}>{label}</Pill>
+              <div className="min-w-0 flex-1 text-[13.5px]">
+                <span className="text-fg">{r.detail}</span>
+                {r.creator && <span className="text-muted"> · {r.creator}</span>}
+                <div className="text-[12px] text-faint">{r.by} · {timeAgo(r.at)}</div>
+              </div>
+              {r.amount !== undefined && <span className="tabular-nums text-[14px] text-fg">{money(r.amount)}</span>}
+            </div>
+          )
+        })}
+      </Panel>
+    </section>
   )
 }

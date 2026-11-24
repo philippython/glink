@@ -50,14 +50,15 @@ function normalize(s: MarketState | null): { state: State; me: CreatorProfile } 
       notifications: s?.notifications ?? [],
       team: s?.team ?? [],
       wallet: s?.wallet ?? 0,
-      billing: s?.billing ?? { held: 0, ledger: [], budgets: {} },
+      billing: { held: 0, ledger: [], budgets: {}, holds: {}, feesPaid: 0, feePct: 0, campaignFeePct: {}, ...s?.billing },
       payouts: s?.payouts ?? [],
       payoutAccount: s?.payoutAccount ?? { connected: false, ready: false, auto: true },
     },
   }
 }
 
-export type CampaignDraft = Omit<Campaign, 'id' | 'brandId' | 'brandName' | 'status' | 'createdAt' | 'deadline'>
+export type CampaignDraft = Omit<Campaign, 'id' | 'brandId' | 'brandName' | 'status' | 'createdAt' | 'deadline' | 'licence'>
+export interface AuditEntry { id: string; action: string; detail: string; amount?: number; at: string; by: string; creator?: string }
 export interface UploadMeta { duration: number; width?: number; height?: number; script?: string; frames?: { t: number; data: string }[] }
 export interface Metrics { impressions: number; clicks: number; conversions: number; spend: number; thumbstop: number; holdRate: number }
 
@@ -98,6 +99,9 @@ interface Store {
   review: (submissionId: string, decision: 'approve' | 'changes' | 'reject', note: string) => Promise<void>
   recordMetrics: (submissionId: string, m: Metrics) => Promise<{ ctr: number; winning: boolean; bonusPaid: boolean }>
   pickWinner: (submissionId: string, place: number) => Promise<void>
+  shortlist: (submissionId: string, on: boolean) => Promise<void>
+  refundWallet: (amount: number) => Promise<number>
+  loadAudit: () => Promise<AuditEntry[]>
   updateBrand: (b: Omit<Brand, 'id'>) => Promise<FieldErrors | null>
   inviteTeammate: (email: string, role: 'Manager' | 'Reviewer') => Promise<FieldErrors | null>
   removeTeammate: (email: string) => Promise<void>
@@ -195,6 +199,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       review: (id, decision, note) => act(() => api(`/submissions/${id}/review`, { body: { decision, note } })).then(() => undefined),
       recordMetrics: (id, m) => act(() => api<{ ctr: number; winning: boolean; bonusPaid: boolean }>(`/submissions/${id}/metrics`, { body: m })),
       pickWinner: (id, place) => act(() => api(`/submissions/${id}/winner`, { body: { place } })).then(() => undefined),
+      shortlist: (id, on) => act(() => api(`/submissions/${id}/shortlist`, { body: { on } })).then(() => undefined),
+      refundWallet: amount => act(() => api<{ amount: number }>('/billing/refund', { body: { amount } })).then(r => r.amount),
+      loadAudit: () => api<AuditEntry[]>('/audit'),
       updateBrand: b => withFields(() => act(() => api('/brand', { method: 'PATCH', body: b }))),
       inviteTeammate: (email, role) => withFields(() => act(() => api('/team/invite', { body: { email, role } }))),
       removeTeammate: email => act(() => api(`/team/${encodeURIComponent(email)}`, { method: 'DELETE' })).then(() => undefined),

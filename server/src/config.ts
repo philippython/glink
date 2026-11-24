@@ -34,6 +34,8 @@ export const config = {
   stripe: env.STRIPE_SECRET_KEY
     ? { secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET ?? '', currency: (env.STRIPE_CURRENCY ?? 'usd').toLowerCase() }
     : null,
+  /** Glink's fee, charged to the brand on top of what creators are paid (percent). Fixed per campaign at launch. */
+  platformFeePct: Math.max(0, Math.min(50, Number(env.PLATFORM_FEE_PCT ?? 10))),
   /** Escrow automation: remind brands to review, auto-approve clean videos, pay creators automatically. */
   automation: {
     reviewReminderDays: Number(env.REVIEW_REMINDER_DAYS ?? 2),

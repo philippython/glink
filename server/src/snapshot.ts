@@ -3,7 +3,9 @@
 
 import type { User } from './auth.ts'
 import { all, j, one } from './db.ts'
-import { budgetOf, creatorHistory, deadlineOf, escrowHeld, walletBalance, type CampaignRow, type Metrics, type SubmissionRow } from './domain.ts'
+import { budgetOf, creatorHistory, deadlineOf, escrowHeld, feesCharged, holdOf, walletBalance, type CampaignRow, type Metrics, type SubmissionRow } from './domain.ts'
+import { config } from './config.ts'
+import { describeLicence } from './taxonomy.ts'
 import { learnStrengths, type Strengths } from './matching.ts'
 import { toDollars } from './util.ts'
 
@@ -75,6 +77,8 @@ function campaignView(c: CampaignRow) {
     benchmarkCtr: c.benchmark_ctr, bonusMetric: c.bonus_metric ?? 'ctr', bonusThreshold: c.bonus_threshold ?? c.benchmark_ctr, bonusWindowDays: c.bonus_window_days ?? 14,
     prizes: prizes.map(toDollars), creatorsWanted: c.creators_wanted, sourcing: c.sourcing,
     timeline: j(c.timeline, []), status: c.status, createdAt: c.created_at.slice(0, 10), deadline: deadlineOf(c),
+    usagePlatforms: j<string[]>(c.usage_platforms, []), usageMonths: c.usage_months, paidUsage: !!c.paid_usage,
+    licence: describeLicence(j<string[]>(c.usage_platforms, []), c.usage_months, !!c.paid_usage),
   }
 }
 
@@ -86,7 +90,7 @@ function submissionView(s: SubmissionRow) {
     aspectRatio: s.width && s.height ? `${s.width}:${s.height}` : undefined, resolution: s.width && s.height ? `${s.width}×${s.height}` : undefined,
     script: s.script ?? undefined, preflight: j(s.preflight, []), briefMatch: s.brief_match ?? undefined, aiFeedback: s.ai_feedback ?? undefined,
     status: s.status, reviewNote: s.review_note ?? undefined, submittedAt: s.submitted_at ?? undefined, approvedAt: s.approved_at ?? undefined,
-    attempts: s.attempts, winning: !!s.winning, placement: s.placement ?? undefined,
+    attempts: s.attempts, winning: !!s.winning, placement: s.placement ?? undefined, shortlisted: !!s.shortlisted_by,
     metrics: m ? {
       views: m.impressions, ctr: m.impressions ? +((m.clicks / m.impressions) * 100).toFixed(2) : 0, conversions: m.conversions,
       costPerResult: m.conversions ? Math.round(m.spend / m.conversions) / 100 : 0, thumbstop: m.thumbstop, holdRate: m.holdRate,
@@ -135,6 +139,10 @@ export function snapshot(user: User) {
         held: toDollars(camps.filter(c => c.status !== 'draft').reduce((a, c) => a + escrowHeld(c.id), 0)),
         ledger: ledger.map(l => ({ id: l.id, kind: l.kind, amount: toDollars(l.amount), note: l.note, date: l.created_at.slice(0, 10) })),
         budgets: Object.fromEntries(camps.map(c => [c.id, toDollars(budgetOf(c))])),
+        holds: Object.fromEntries(camps.map(c => [c.id, toDollars(holdOf(c))])),
+        feesPaid: toDollars(camps.reduce((a, c) => a + feesCharged(c.id), 0)),
+        feePct: config.platformFeePct,
+        campaignFeePct: Object.fromEntries(camps.map(c => [c.id, c.fee_pct ?? 0])),
       },
     }
   }

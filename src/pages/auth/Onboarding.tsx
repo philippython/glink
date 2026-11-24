@@ -123,6 +123,9 @@ export function Login({ mode = 'login' }: { mode?: 'login' | 'signup' }) {
           {mode === 'login' && <Link to="/forgot-password" className="inline-block text-[13px] text-muted underline-offset-4 hover:text-fg hover:underline">Forgot password?</Link>}
           <Button type="submit" variant="brand" className="w-full" loading={busy}>{mode === 'login' ? 'Log in' : 'Create account'}</Button>
         </form>
+        <p className="mt-4 text-center text-[12px] text-faint">
+          {mode === 'signup' ? 'By creating an account' : 'By continuing'} you agree to Glink’s <Link to="/terms" className="underline underline-offset-2 hover:text-fg">Terms</Link> and <Link to="/privacy" className="underline underline-offset-2 hover:text-fg">Privacy Policy</Link>.
+        </p>
       </div>
       <p className="mt-5 text-center text-[13.5px] text-muted">
         {mode === 'login' ? <>Don’t have an account? <Link to={`/signup${as ? `?as=${as}` : ''}`} className="font-medium text-fg hover:underline">Create one</Link></>

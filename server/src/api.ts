@@ -11,15 +11,15 @@ import { z } from 'zod'
 import { aiAnalyzeProduct, aiReview, type Frame } from './ai.ts'
 import { requireUser, type Env, type User } from './auth.ts'
 import { config } from './config.ts'
-import { j, one, run, tx } from './db.ts'
+import { all, j, one, run, tx } from './db.ts'
 import {
-  approve, budgetOf, deliverablesOf, inviteCreator, ledgerEntry, matchCampaign, pickWinner, recordMetrics, refillInvites, walletBalance,
+  approve, audit, holdOf, deliverablesOf, inviteCreator, ledgerEntry, matchCampaign, pickWinner, recordMetrics, refillInvites, walletBalance,
   type CampaignRow, type SubmissionRow,
 } from './domain.ts'
 import { brandUsers, creatorUser, emit, notify, sendEmail, subscribe } from './events.ts'
 import { CATEGORIES, rankCreators } from './matching.ts'
-import { BONUS_METRIC_KEYS, COUNTRIES, describeBonus, GOAL_NAMES } from './taxonomy.ts'
-import { availablePayments, createTopUpCheckout, payoutDashboardLink, payoutOnboardingLink, recordPayout, syncPayoutAccount, withdrawToBank } from './payments.ts'
+import { BONUS_METRIC_KEYS, COUNTRIES, describeBonus, GOAL_NAMES, USAGE_PLATFORMS, USAGE_TERMS } from './taxonomy.ts'
+import { availablePayments, createTopUpCheckout, refundWallet, payoutDashboardLink, payoutOnboardingLink, recordPayout, syncPayoutAccount, withdrawToBank } from './payments.ts'
 import { briefMatch, formatChecks, issueCount, scriptChecks } from './preflight.ts'
 import { seedForNewBrand, seedForNewCreator } from './seed.ts'
 import { membership, snapshot } from './snapshot.ts'
@@ -198,6 +198,9 @@ const CampaignInputSchema = z.object({
   sourcing: z.enum(['auto', 'handpick', 'contest']),
   prizes: z.array(z.number().min(0)).max(5).default([]),
   timeline: z.array(Milestone).min(2).refine(t => t.filter(m => m.deadline).length === 1, 'The timeline needs exactly one submission deadline.'),
+  usagePlatforms: z.array(z.enum(USAGE_PLATFORMS)).min(1, 'Choose at least one place the videos may be used.').max(USAGE_PLATFORMS.length).default(['TikTok', 'Instagram', 'Facebook']),
+  usageMonths: z.number().int().refine(n => (USAGE_TERMS as readonly number[]).includes(n), 'Choose how long the videos may be used.').default(12),
+  paidUsage: z.boolean().default(true),
 }).refine(c => c.sourcing === 'contest' || c.baseFee >= 50, { message: 'Base fee must be at least $50.', path: ['baseFee'] })
   .refine(c => c.sourcing !== 'contest' || c.prizes.some(p => p > 0), { message: 'Add at least one prize.', path: ['prizes'] })
 
@@ -213,20 +216,21 @@ api.post('/campaigns', async c => {
   tx(() => {
     run(`INSERT INTO campaigns (id, brand_id, name, product, category, goal, market, target_customers, creative_angle, suggested_opening, story_flow, must_include, avoid,
       deliverables, base_fee, bonus_amount, bonus_rule, benchmark_ctr, creators_wanted, sourcing, prizes, timeline, status, created_by, created_at,
-      bonus_metric, bonus_threshold, bonus_window_days)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      bonus_metric, bonus_threshold, bonus_window_days, fee_pct, usage_platforms, usage_months, paid_usage)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     campId, m.brand_id, d.name, d.product, d.category, d.goal, d.market, JSON.stringify(d.targetCustomers), d.creativeAngle, d.suggestedOpening,
     JSON.stringify(d.storyFlow), JSON.stringify(d.mustInclude), JSON.stringify(d.avoid), JSON.stringify(d.deliverables),
     d.sourcing === 'contest' ? 0 : toCents(d.baseFee), d.sourcing === 'contest' ? 0 : toCents(d.bonusAmount),
     d.sourcing === 'contest' ? d.bonusRule : describeBonus(d.bonusMetric as never, threshold, d.bonusWindowDays), d.bonusMetric === 'ctr' ? threshold : d.benchmarkCtr,
     d.sourcing === 'contest' ? Math.max(1, d.prizes.filter(p => p > 0).length) : d.creatorsWanted, d.sourcing,
     JSON.stringify(d.prizes.filter(p => p > 0).map(toCents)), JSON.stringify(d.timeline), 'live', user.id, now(),
-    d.bonusMetric, threshold, d.bonusWindowDays)
+    d.bonusMetric, threshold, d.bonusWindowDays, config.platformFeePct, JSON.stringify([...new Set(d.usagePlatforms)]), d.usageMonths, d.paidUsage ? 1 : 0)
     const camp = one<CampaignRow>('SELECT * FROM campaigns WHERE id = ?', campId)!
-    const budget = budgetOf(camp)
+    const hold = holdOf(camp)
     const balance = walletBalance(m.brand_id)
-    if (budget > balance) throw new HttpError(402, `This campaign needs $${(budget / 100).toLocaleString()} in escrow but your wallet has $${(balance / 100).toLocaleString()}. Top up in Billing first.`, { wallet: 'Not enough funds in your wallet.' })
-    ledgerEntry(m.brand_id, 'hold', -budget, `Escrow for ${d.name}`, campId)
+    if (hold > balance) throw new HttpError(402, `This campaign needs $${(hold / 100).toLocaleString()} in escrow${camp.fee_pct ? ` (including Glink’s ${camp.fee_pct}% fee)` : ''} but your wallet has $${(balance / 100).toLocaleString()}. Top up in Billing first.`, { wallet: 'Not enough funds in your wallet.' })
+    ledgerEntry(m.brand_id, 'hold', -hold, `Escrow for ${d.name}`, campId)
+    audit({ brandId: m.brand_id, userId: user.id, action: 'campaign.launch', detail: `${d.name} · budget held in escrow`, amount: hold })
   })
   matchCampaign(campId)
   notify(brandUsers(m.brand_id), { title: 'Campaign launched', body: `${d.name} is live${d.sourcing === 'auto' ? ' and the best-matched creators have been invited' : ''}.`, link: d.sourcing === 'contest' ? '/brand/contests' : `/brand/creators?campaign=${campId}` })
@@ -261,8 +265,10 @@ api.post('/submissions/:id/review', async c => {
   const { sub, camp } = submissionForBrand(c.req.param('id'), m.brand_id)
   if (sub.status !== 'submitted') throw new HttpError(409, 'This video has already been reviewed.')
   if (camp.sourcing === 'contest' && decision === 'approve') throw new HttpError(400, 'For contests, pick winners instead of approving.')
-  if (decision === 'approve') approve(sub, camp, user.id, note)
-  else {
+  if (decision === 'approve') {
+    approve(sub, camp, user.id, note)
+    audit({ brandId: camp.brand_id, userId: user.id, creatorId: sub.creator_id, action: 'review.approve', detail: `${camp.name}, video ${sub.idx}`, amount: camp.base_fee })
+  } else {
     // Flagged timestamps travel with a change request so the creator knows what to fix.
     const flagged = j<{ status: string; label: string; at?: number }[]>(sub.preflight, []).filter(i => i.status === 'fail' && i.at !== undefined)
     const fullNote = [note.trim(), flagged.length && decision === 'changes' ? `Flagged: ${flagged.map(f => `0:${String(Math.floor(f.at!)).padStart(2, '0')} ${f.label}`).join('; ')}` : ''].filter(Boolean).join(' — ')
@@ -291,7 +297,20 @@ api.post('/submissions/:id/winner', async c => {
   const { sub, camp } = submissionForBrand(c.req.param('id'), m.brand_id)
   if (camp.sourcing !== 'contest') throw new HttpError(400, 'Only contest entries can win prizes.')
   pickWinner(sub, camp, place)
+  audit({ brandId: camp.brand_id, userId: c.get('user').id, creatorId: sub.creator_id, action: 'contest.winner', detail: `${camp.name} · place ${place}` })
   touchBrandAndCreator(camp.brand_id, sub.creator_id)
+  return c.json({ ok: true })
+})
+
+/** Contest shortlist, shared by the whole brand team. */
+api.post('/submissions/:id/shortlist', async c => {
+  const user = c.get('user')
+  const m = brandOf(user)
+  const { on } = parse(z.object({ on: z.boolean() }), await c.req.json())
+  const { sub, camp } = submissionForBrand(c.req.param('id'), m.brand_id)
+  if (camp.sourcing !== 'contest') throw new HttpError(400, 'Only contest entries can be shortlisted.')
+  run('UPDATE submissions SET shortlisted_by = ? WHERE id = ?', on ? user.id : null, sub.id)
+  emit(brandUsers(m.brand_id))
   return c.json({ ok: true })
 })
 
@@ -311,8 +330,31 @@ api.post('/billing/topup', async c => {
   if (!config.allowTestFunds) throw new HttpError(403, 'Payments aren’t connected yet, so funds can’t be added here.')
   const { amount } = parse(z.object({ amount: z.number().min(10).max(100_000) }), await c.req.json())
   ledgerEntry(m.brand_id, 'topup', toCents(amount), 'Wallet top-up (test funds)')
+  audit({ brandId: m.brand_id, userId: c.get('user').id, action: 'wallet.topup', detail: 'Test funds', amount: toCents(amount) })
   emit(brandUsers(m.brand_id))
   return c.json({ ok: true })
+})
+
+/** Refunds unused wallet money: to the card with Stripe, or removes test funds without it. */
+api.post('/billing/refund', async c => {
+  const user = c.get('user')
+  const m = brandOf(user, 'owner')
+  if (!config.stripe && !config.allowTestFunds) throw new HttpError(503, 'Card payments aren’t set up yet.')
+  const { amount } = parse(z.object({ amount: z.number({ error: 'Enter an amount.' }).min(1, 'The smallest refund is $1.').max(100_000) }), await c.req.json())
+  return c.json({ amount: (await refundWallet(m.brand_id, toCents(amount), user.id)) / 100 })
+})
+
+/** The brand's activity log: money and permission changes (Owners only). */
+api.get('/audit', c => {
+  const m = brandOf(c.get('user'), 'owner')
+  const rows = all<{ id: string; user_id: string | null; creator_id: string | null; action: string; detail: string; amount: number | null; created_at: string }>(
+    'SELECT * FROM audit_log WHERE brand_id = ? ORDER BY created_at DESC LIMIT 200', m.brand_id)
+  const name = (sql: string, v: string | null) => (v ? one<{ n: string }>(sql, v)?.n : undefined)
+  return c.json(rows.map(r => ({
+    id: r.id, action: r.action, detail: r.detail, amount: r.amount === null ? undefined : r.amount / 100, at: r.created_at,
+    by: name('SELECT name n FROM users WHERE id = ?', r.user_id) ?? (r.user_id ? 'Former teammate' : 'Glink (automatic)'),
+    creator: name('SELECT display_name n FROM creator_profiles WHERE id = ?', r.creator_id),
+  })))
 })
 
 /** Starts a Stripe Checkout payment; the wallet is credited when Stripe confirms it. */
@@ -334,6 +376,7 @@ api.post('/team/invite', async c => {
   if (otherBrand) throw new HttpError(409, 'This person already belongs to another brand.', { email: 'This person already belongs to another brand.' })
   run('INSERT INTO brand_members (brand_id, user_id, email, role, pending, created_at) VALUES (?,?,?,?,1,?)', m.brand_id, null, email, role, now())
   const brand = one<{ name: string }>('SELECT name FROM brands WHERE id = ?', m.brand_id)!
+  audit({ brandId: m.brand_id, userId: user.id, action: 'team.invite', detail: `${email} as ${role}` })
   sendEmail(email, `${user.name} invited you to ${brand.name} on Glink`, `You’ve been invited as a ${role}. Create an account or log in with this email to join:\n${config.appUrl}/signup`)
   emit(brandUsers(m.brand_id))
   return c.json({ ok: true })
@@ -343,7 +386,8 @@ api.delete('/team/:email', c => {
   const m = brandOf(c.get('user'), 'owner')
   const email = decodeURIComponent(c.req.param('email'))
   if (email === c.get('user').email) throw new HttpError(400, 'You can’t remove yourself.')
-  run("DELETE FROM brand_members WHERE brand_id = ? AND email = ? AND role != 'Owner'", m.brand_id, email)
+  const removed = run("DELETE FROM brand_members WHERE brand_id = ? AND email = ? AND role != 'Owner'", m.brand_id, email)
+  if (Number(removed.changes)) audit({ brandId: m.brand_id, userId: c.get('user').id, action: 'team.remove', detail: email })
   emit(brandUsers(m.brand_id))
   return c.json({ ok: true })
 })
@@ -564,7 +608,9 @@ api.post('/payouts/connect', async c => {
 api.post('/payouts/sync', async c => c.json({ ready: await syncPayoutAccount(creatorOf(c.get('user')).id) }))
 api.post('/payouts/settings', async c => {
   const { auto } = parse(z.object({ auto: z.boolean() }), await c.req.json())
-  run('UPDATE creator_profiles SET auto_payout = ? WHERE id = ?', auto ? 1 : 0, creatorOf(c.get('user')).id)
+  const p = creatorOf(c.get('user'))
+  run('UPDATE creator_profiles SET auto_payout = ? WHERE id = ?', auto ? 1 : 0, p.id)
+  audit({ creatorId: p.id, userId: c.get('user').id, action: 'payout.settings', detail: auto ? 'Automatic payouts on' : 'Automatic payouts off' })
   return c.json({ ok: true })
 })
 api.post('/payouts/dashboard', async c => c.json({ url: await payoutDashboardLink(creatorOf(c.get('user')).id) }))

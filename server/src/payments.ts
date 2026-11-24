@@ -7,7 +7,7 @@ import Stripe from 'stripe'
 import { Hono } from 'hono'
 import { config } from './config.ts'
 import { all, one, run, tx } from './db.ts'
-import { creditTopUp } from './domain.ts'
+import { audit, creditTopUp, walletBalance } from './domain.ts'
 import { brandUsers, creatorUser, emit, notify } from './events.ts'
 import { COUNTRY_CODE } from './taxonomy.ts'
 import { HttpError, id, now, toCents } from './util.ts'
@@ -54,9 +54,73 @@ function creditSession(s: Stripe.Checkout.Session) {
   if (s.metadata?.purpose !== 'wallet_topup' || s.payment_status !== 'paid' || !brandId || !s.amount_total) return
   if (!one('SELECT 1 FROM brands WHERE id = ?', brandId)) return
   if (creditTopUp(brandId, s.amount_total, 'Wallet top-up (card)', s.id)) {
+    audit({ brandId, action: 'wallet.topup', detail: 'Card top-up', amount: s.amount_total })
     notify(brandUsers(brandId), { title: 'Funds added', body: `${dollars(s.amount_total)} was added to your wallet.`, link: '/brand/billing' })
     emit(brandUsers(brandId))
   }
+}
+
+// ─── Brand wallet refunds ───────────────────────────────────────────────────
+
+const refunding = new Set<string>()
+
+/**
+ * Sends unused wallet money back to the brand. With Stripe, it is refunded to the cards that paid the
+ * most recent top-ups (newest first). The wallet is debited before Stripe is called, so two clicks
+ * can't refund the same money twice; anything Stripe can't refund is put back into the wallet.
+ * Returns the amount refunded (cents).
+ */
+export async function refundWallet(brandId: string, amount: number, userId: string) {
+  if (refunding.has(brandId)) throw new HttpError(409, 'A refund is already being processed.')
+  refunding.add(brandId)
+  try {
+    const ref = id('wr')
+    tx(() => {
+      const balance = walletBalance(brandId)
+      if (amount > balance) throw new HttpError(400, `Your wallet has ${dollars(balance)} available to refund.`, { amount: `You can refund up to ${dollars(balance)}.` })
+      run('INSERT INTO ledger (id, brand_id, campaign_id, kind, amount, note, created_at, external_id) VALUES (?,?,NULL,?,?,?,?,?)',
+        id('led'), brandId, 'withdrawal', -amount, config.stripe ? 'Refund to card' : 'Refund of test funds', now(), ref)
+    })
+    let refunded = amount
+    if (config.stripe) {
+      refunded = 0
+      const topups = all<{ amount: number; external_id: string }>(
+        "SELECT amount, external_id FROM ledger WHERE brand_id = ? AND kind = 'topup' AND external_id LIKE 'cs_%' ORDER BY created_at DESC", brandId)
+      try {
+        for (const t of topups) {
+          if (refunded >= amount) break
+          const session = await stripe().checkout.sessions.retrieve(t.external_id)
+          const pi = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+          if (!pi) continue
+          const already = (await stripe().refunds.list({ payment_intent: pi, limit: 100 })).data
+            .filter(r => r.status !== 'failed' && r.status !== 'canceled').reduce((a, r) => a + r.amount, 0)
+          const take = Math.min(amount - refunded, t.amount - already)
+          if (take <= 0) continue
+          await stripe().refunds.create({ payment_intent: pi, amount: take, metadata: { brandId, walletRefund: ref } }, { idempotencyKey: `${ref}-${pi}` })
+          refunded += take
+        }
+      } catch (e) {
+        console.error(`[wallet-refund] ${brandId}: ${(e as Error).message}`)
+      }
+      if (refunded < amount) {
+        run('INSERT INTO ledger (id, brand_id, campaign_id, kind, amount, note, created_at) VALUES (?,?,NULL,?,?,?,?)',
+          id('led'), brandId, 'refund', amount - refunded, 'Part of a card refund that couldn’t be sent back — returned to your wallet', now())
+      }
+    }
+    if (refunded > 0) audit({ brandId, userId, action: 'wallet.refund', detail: config.stripe ? 'Refunded to card' : 'Test funds removed', amount: refunded })
+    emit(brandUsers(brandId))
+    if (refunded === 0) throw new HttpError(400, 'Nothing could be refunded to a card. Only money added by card can be refunded.')
+    return refunded
+  } finally {
+    refunding.delete(brandId)
+  }
+}
+
+/** A card payment was disputed: tell the brand's team and record it. */
+function onDispute(brandId: string, amount: number, reason: string) {
+  if (!one('SELECT 1 FROM brands WHERE id = ?', brandId)) return
+  audit({ brandId, action: 'wallet.dispute', detail: `Card payment disputed (${reason})`, amount })
+  notify(brandUsers(brandId), { title: 'A card payment was disputed', body: `${dollars(amount)} is under dispute with the card issuer. Contact Glink support if this wasn’t expected.`, link: '/brand/billing' })
 }
 
 // ─── Creator payout accounts ────────────────────────────────────────────────
@@ -122,6 +186,7 @@ export function recordPayout(creatorId: string, paymentIds: string[], total: num
       if (sub?.submission_id) run("UPDATE submissions SET status = 'paid' WHERE id = ? AND status = 'approved'", sub.submission_id)
     }
     run('INSERT INTO payouts (id, creator_id, amount, created_at, stripe_transfer_id) VALUES (?,?,?,?,?)', payoutId, creatorId, total, now(), transferId)
+    audit({ creatorId, action: 'payout', detail: transferId ? `Stripe transfer ${transferId}` : 'Recorded payout (no bank connected)', amount: total })
   })
 }
 
@@ -187,10 +252,18 @@ stripeWebhook.post('/webhook', async c => {
     return c.json({ error: 'Invalid signature.' }, 400)
   }
   if (one('SELECT 1 FROM stripe_events WHERE id = ?', event.id)) return c.json({ received: true })
+  // Disputes name the payment, not the brand: look the brand up on the payment before recording the event.
+  let disputeBrand: string | undefined
+  if (event.type === 'charge.dispute.created') {
+    const pi = event.data.object.payment_intent
+    const piId = typeof pi === 'string' ? pi : pi?.id
+    if (piId) disputeBrand = (await stripe().paymentIntents.retrieve(piId).catch(() => null))?.metadata?.brandId
+  }
   tx(() => {
     run('INSERT INTO stripe_events (id, type, created_at) VALUES (?,?,?)', event.id, event.type, now())
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') creditSession(event.data.object)
     else if (event.type === 'account.updated') applyAccount(event.data.object)
+    else if (event.type === 'charge.dispute.created' && disputeBrand) onDispute(disputeBrand, event.data.object.amount, event.data.object.reason)
   })
   return c.json({ received: true })
 })

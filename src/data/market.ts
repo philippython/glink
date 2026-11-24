@@ -65,6 +65,11 @@ export interface Campaign {
   status: 'draft' | 'live' | 'completed'
   createdAt: string
   deadline: string
+  /** Content licence: where and how long the brand may use the videos, and whether as paid ads. */
+  usagePlatforms: string[]
+  usageMonths: number
+  paidUsage: boolean
+  licence: string
 }
 
 export type MatchStatus = 'suggested' | 'invited' | 'accepted' | 'declined'
@@ -97,6 +102,7 @@ export interface CreativeSubmission {
   attempts: number
   winning: boolean
   placement?: number
+  shortlisted?: boolean
   metrics?: { views: number; ctr: number; conversions: number; costPerResult: number; thumbstop: number; holdRate: number; clicks: number; spend: number }
 }
 
@@ -127,7 +133,17 @@ export interface MarketState {
   creators?: CreatorProfile[]
   team?: TeamMember[]
   wallet?: number
-  billing?: { held: number; ledger: { id: string; kind: 'topup' | 'hold' | 'refund'; amount: number; note: string; date: string }[]; budgets: Record<string, number> }
+  billing?: {
+    held: number
+    ledger: { id: string; kind: 'topup' | 'hold' | 'refund' | 'withdrawal'; amount: number; note: string; date: string }[]
+    /** Creator pay per campaign, and what was held (creator pay + platform fee). */
+    budgets: Record<string, number>
+    holds: Record<string, number>
+    feesPaid: number
+    /** Fee rate new campaigns launch with, and the rate fixed on each existing campaign. */
+    feePct: number
+    campaignFeePct: Record<string, number>
+  }
   // creator
   me?: CreatorProfile | null
   meCreatorId?: string
@@ -175,4 +191,4 @@ export function validateCreator(input: { displayName: string; country: string; n
 }
 
 // One list for the whole app and the server: every country, the categories, goals and audience suggestions.
-export { AUDIENCES, audienceSuggestions, BONUS_METRICS, BONUS_METRIC_KEYS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, GOAL_NAMES, GOALS, goalsFor } from '../../server/src/taxonomy.ts'
+export { AUDIENCES, audienceSuggestions, BONUS_METRICS, BONUS_METRIC_KEYS, CATEGORIES, CATEGORY_INFO, COUNTRIES, describeBonus, describeLicence, GOAL_NAMES, GOALS, goalsFor, USAGE_PLATFORMS, USAGE_TERMS } from '../../server/src/taxonomy.ts'

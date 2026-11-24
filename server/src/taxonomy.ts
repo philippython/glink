@@ -142,3 +142,16 @@ export function describeBonus(metric: BonusMetric, threshold: number, windowDays
   const value = m.unit === '$' ? `$${threshold}` : `${threshold}%`
   return `${m.label} ${m.better === 'higher' ? 'above' : 'below'} ${value} within ${windowDays} days`
 }
+
+// ─── Content licence: what the brand may do with the videos it pays for ────
+
+export const USAGE_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'YouTube', 'Snapchat', 'Pinterest', 'X', 'Website', 'Email'] as const
+export type UsagePlatform = typeof USAGE_PLATFORMS[number]
+/** Licence lengths offered in the campaign wizard (months; 0 = perpetual). */
+export const USAGE_TERMS = [3, 6, 12, 24, 0] as const
+
+export function describeLicence(platforms: readonly string[], months: number, paid: boolean) {
+  const where = platforms.length ? platforms.join(', ') : 'no platforms'
+  const term = months === 0 ? 'with no end date' : `for ${months} months from approval`
+  return `${paid ? 'Organic posts and paid ads' : 'Organic posts only (no paid ads)'} on ${where}, ${term}.`
+}

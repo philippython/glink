@@ -151,6 +151,7 @@ export function Mission() {
           <KV label="Story flow">{c.storyFlow.map((x, i) => <div key={x}>{i + 1}. {x}</div>)}</KV>
           <KV label="Must include">{c.mustInclude.length ? c.mustInclude.map(x => <div key={x} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-success" />{x}</div>) : '—'}</KV>
           <KV label="Avoid">{c.avoid.length ? c.avoid.map(x => <div key={x} className="flex gap-2"><X size={14} className="mt-0.5 shrink-0 text-danger" />{x}</div>) : '—'}</KV>
+          {c.licence && <KV label="Usage rights">{c.licence}</KV>}
           <KV label="Format">{c.deliverables.aspectRatio} · {c.deliverables.minSec}–{c.deliverables.maxSec} seconds</KV>
         </Panel>
 

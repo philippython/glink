@@ -6,6 +6,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { Shell } from './components/Shell'
 import { CrashScreen, ErrorBoundary } from './components/ErrorBoundary'
 import Landing from './pages/Landing'
+import { Privacy, Terms } from './pages/Legal'
 import { BrandSetup, ChoosePath, CreatorSetup, ForgotPassword, Login, Preparing, ResetPassword } from './pages/auth/Onboarding'
 // Brand side
 import BrandHome from './pages/brand/Home'
@@ -51,6 +52,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="/signup" element={<Login mode="signup" />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />

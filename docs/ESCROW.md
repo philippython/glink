@@ -5,7 +5,7 @@ How money moves through Glink without anyone chasing it: what triggers each step
 ## The flow at a glance
 
 ```
-Brand card ──Stripe Checkout──▶ Wallet ──launch──▶ Held (per campaign)
+Brand card ──Stripe Checkout──▶ Wallet ──launch──▶ Held (per campaign: budget + platform fee)
                                                      │
                                          creator submits a video
                                                      │
@@ -16,7 +16,8 @@ Brand card ──Stripe Checkout──▶ Wallet ──launch──▶ Held (per
    failed checks ──▶ never auto-approved; brand asked to decide
 
    results beat the brand's bonus rule ──▶ bonus paid to Pending
-   campaign completes / bonus window closes ──▶ unused budget returns to the Wallet
+   campaign completes / bonus window closes ──▶ unused budget (and its fee) returns to the Wallet
+   Wallet ──owner asks──▶ refunded to the card that paid (Stripe Refund)
 ```
 
 Every arrow is an entry in the ledger (`ledger` for brand money, `payments` and `payouts` for creator money), so every balance can be explained line by line.
@@ -26,7 +27,8 @@ Every arrow is an entry in the ledger (`ledger` for brand money, `payments` and 
 | Step | Trigger | Code | Stack |
 |---|---|---|---|
 | Credit the wallet | Stripe `checkout.session.completed` webhook | `server/src/payments.ts` → `creditSession` | Stripe Checkout + signed webhook |
-| Hold the budget | Brand launches a campaign | `POST /api/campaigns` → ledger `hold` | SQLite/Postgres transaction |
+| Hold the budget | Brand launches a campaign | `POST /api/campaigns` → ledger `hold` of `holdOf()` = budget + fee | SQLite/Postgres transaction |
+| Platform fee | Each creator payment (base, bonus, prize) | `pay()` → `platform_fees` row | Same transaction as the payment |
 | Review reminder | Video waiting `REVIEW_REMINDER_DAYS` (2) | `reviewAutomation()` in `server/src/domain.ts` | Background loop (every minute) |
 | Auto-approval | Waiting `AUTO_APPROVE_DAYS` (5) **and** no failed pre-flight checks | `reviewAutomation()` → `approve()` | Background loop |
 | Escalation | Waiting 5 days **with** failed checks, or not enough funds | `reviewAutomation()` | Background loop + notifications |
@@ -34,6 +36,8 @@ Every arrow is an entry in the ledger (`ledger` for brand money, `payments` and 
 | Bonus | Brand records (later: imports) results that beat the campaign's rule | `recordMetrics()` | API request |
 | Auto-payout | Available ≥ `AUTO_PAYOUT_MIN` ($20), payout account ready, auto-payout on | `runAutoPayouts()` in `payments.ts` | Background loop + Stripe Transfer |
 | Return unused budget | Campaign completes; bonus window closes | `maybeCompleteCampaign()`, `sweep()` | Background loop |
+| Refund the wallet | Owner asks on the Billing page | `POST /api/billing/refund` → `refundWallet()` | Stripe Refunds, newest card top-up first |
+| Dispute alert | Stripe `charge.dispute.created` webhook | `onDispute()` in `payments.ts` | Notification + audit log |
 
 The background loop is started in `server/src/index.ts` and runs every 60 seconds: `sweep()` (clearance, unused bonuses, review automation), then `runAutoPayouts()`.
 
@@ -51,6 +55,18 @@ Each campaign stores its own rule: a **metric**, a **threshold** and a **window*
 
 A creative can win once. The bonus money stays held until each approved video's window closes, then any unearned share returns to the brand.
 
+## Platform fee
+
+`PLATFORM_FEE_PCT` (default 10) is copied onto each campaign as `fee_pct` when it launches, so changing it never affects live campaigns. The launch hold is the creator budget plus the fee on it. Each time a creator is paid, the fee on that payment is recorded in `platform_fees`, and campaign escrow is `holds − creator payments − fees`. So the brand pays the fee only on money that actually reaches creators; the fee on unspent budget returns with it. Creators receive their full fee.
+
+## Wallet refunds
+
+An Owner can refund unused wallet money (not money held for live campaigns). The wallet is debited first in one transaction (ledger `withdrawal`), so double clicks cannot refund twice. The amount is then refunded through Stripe against the newest card top-ups, never more than each payment's unrefunded amount, with an idempotency key per payment. Anything Stripe cannot refund goes straight back into the wallet. Without Stripe, the same endpoint removes test funds.
+
+## Audit log
+
+Every change to money or permissions is written to `audit_log`: top-ups, refunds, disputes, campaign launches (with the amount held), approvals, every creator payment with its fee, contest winners, team invites and removals, creator payouts and payout settings. Brand Owners see it on the Team page (`GET /api/audit`). Automatic steps are recorded as “Glink (automatic)”.
+
 ## Settings
 
 | Variable | Default | Effect |
@@ -58,6 +74,7 @@ A creative can win once. The bonus money stays held until each approved video's 
 | `REVIEW_REMINDER_DAYS` | `2` | When the brand gets a one-time reminder. `0` turns reminders off |
 | `AUTO_APPROVE_DAYS` | `5` | When a clean video is approved automatically. `0` turns auto-approval off |
 | `AUTO_PAYOUT_MIN` | `20` | Smallest available balance (USD) paid out automatically |
+| `PLATFORM_FEE_PCT` | `10` | Glink's fee on creator payments, charged to the brand. `0` turns it off |
 
 Creators can switch automatic payouts off on their Earnings page (`POST /api/payouts/settings`). Auto-approval never applies to contests, where winners are picked by the brand.
 
@@ -71,7 +88,7 @@ Creators can switch automatic payouts off on their Earnings page (`POST /api/pay
 
 ## Tests
 
-`server/test/automation.test.ts` covers reminders (sent once), auto-approval of a clean video with the creator paid from escrow, escalation for a flagged video, every bonus metric including lower-is-better cost per result, and campaign validation. `server/test/payments.test.ts` covers webhook signatures, crediting exactly once and payout readiness.
+`server/test/api.test.ts` covers the fee held at launch and charged on the base fee and bonus, wallet refunds (owners only, never more than the balance), the shared contest shortlist and the audit log. `server/test/automation.test.ts` covers reminders (sent once), auto-approval of a clean video with the creator paid from escrow, escalation for a flagged video, every bonus metric including lower-is-better cost per result, and campaign validation. `server/test/payments.test.ts` covers webhook signatures, crediting exactly once and payout readiness.
 
 ## At scale
 

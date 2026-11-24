@@ -220,6 +220,52 @@ const migrations: string[] = [
   ALTER TABLE submissions ADD COLUMN escalated_at TEXT;
   ALTER TABLE submissions ADD COLUMN auto_approved INTEGER NOT NULL DEFAULT 0;
   `,
+  // 5 — Platform fee, content licence, wallet refunds, shared shortlist, audit log
+  `
+  ALTER TABLE campaigns ADD COLUMN fee_pct REAL NOT NULL DEFAULT 0;
+  ALTER TABLE campaigns ADD COLUMN usage_platforms TEXT NOT NULL DEFAULT '["TikTok","Instagram","Facebook"]';
+  ALTER TABLE campaigns ADD COLUMN usage_months INTEGER NOT NULL DEFAULT 12;
+  ALTER TABLE campaigns ADD COLUMN paid_usage INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE submissions ADD COLUMN shortlisted_by TEXT;
+  -- Platform fees are taken from a campaign's escrow as each creator is paid.
+  CREATE TABLE platform_fees (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    payment_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_fees_campaign ON platform_fees(campaign_id);
+  -- Rebuild the ledger so unused wallet money can be refunded to the brand's card ('withdrawal').
+  CREATE TABLE ledger_new (
+    id TEXT PRIMARY KEY,
+    brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+    campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('topup','hold','refund','withdrawal')),
+    amount INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    external_id TEXT
+  );
+  INSERT INTO ledger_new (id, brand_id, campaign_id, kind, amount, note, created_at, external_id)
+    SELECT id, brand_id, campaign_id, kind, amount, note, created_at, external_id FROM ledger;
+  DROP TABLE ledger;
+  ALTER TABLE ledger_new RENAME TO ledger;
+  CREATE UNIQUE INDEX idx_ledger_external ON ledger(external_id) WHERE external_id IS NOT NULL;
+  CREATE INDEX idx_ledger_brand ON ledger(brand_id);
+  -- Who changed money or permissions, and when.
+  CREATE TABLE audit_log (
+    id TEXT PRIMARY KEY,
+    brand_id TEXT,
+    creator_id TEXT,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    amount INTEGER,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_audit_brand ON audit_log(brand_id, created_at);
+  `,
 ]
 
 try {

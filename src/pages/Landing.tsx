@@ -345,7 +345,9 @@ export default function Landing() {
           {[
             ['How does matching work?', 'Each creator gets a score for your campaign from eight factors — strengths for your goal, category, style, reliability, market, budget, proven results and past work with you. You see the reasons behind every score, and strengths update as real ad results come in.'],
             ['What does the pre-flight check look at?', 'Length, aspect ratio, resolution and file type; spoken must-include lines and words to avoid, from the creator’s script; and, with the AI layer on, visual items from sampled frames. Anything it can’t confirm is flagged for a quick look rather than guessed.'],
-            ['When do creators get paid?', 'The fee is released from escrow when you approve the video and becomes available three days later. If the ad beats your click-through benchmark within 14 days, the bonus is paid automatically.'],
+            ['When do creators get paid?', 'The fee is released from escrow when you approve the video and becomes available three days later. If the ad hits the bonus rule you set — click-through, conversion, hook rate, hold rate or cost per result, within 7 to 90 days — the bonus is paid automatically.'],
+            ['What does Glink charge?', 'A platform fee on what you actually pay creators (10% by default), shown before you launch. It’s held in escrow with the budget, so the fee on anything unspent comes back with it. Creators keep 100% of their fee and join free.'],
+            ['Who owns the videos?', 'Creators own their work. When you approve and pay for a video you get the licence you chose for the campaign — which platforms, for how long, and whether you can run it as paid ads. Creators see it before they accept.'],
             ['Can I use my own creators or run a contest?', 'Yes. Each campaign can auto-match, let you hand-pick, or run as an open contest where you only pay prize winners.'],
             ['Can I sign up with Google, Apple or Facebook?', 'Yes — or with email and password. The same login can work on both the brand and the creator side.'],
           ].map(([q, a]) => (
@@ -391,8 +393,8 @@ export default function Landing() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-line">
-        <div className="mx-auto grid max-w-6xl gap-8 px-5 py-12 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
-          <div>
+        <div className="mx-auto grid max-w-6xl gap-8 px-5 py-12 grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1fr_1fr]">
+          <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5"><Logo size={26} /><span className="font-semibold">Glink</span></div>
             <p className="mt-3 max-w-xs text-[13px] text-muted">UGC that gets better with every campaign.</p>
           </div>
@@ -400,6 +402,7 @@ export default function Landing() {
             ['Product', [['How it works', '#how'], ['Pricing', '#pricing'], ['FAQ', '#faq']]],
             ['Brands', [['Start as a brand', '/signup?as=brand'], ['Log in', '/login']]],
             ['Creators', [['Join as a creator', '/signup?as=creator'], ['Log in', '/login']]],
+            ['Legal', [['Terms', '/terms'], ['Privacy', '/privacy'], ['Content licence', '/terms#licence']]],
           ].map(([h, links]) => (
             <div key={h as string}>
               <Label className="mb-3">{h as string}</Label>

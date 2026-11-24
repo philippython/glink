@@ -48,9 +48,8 @@ function SourcingCompare() {
 }
 
 function ContestView({ campaign: c }: { campaign: Campaign }) {
-  const { state, review, pickWinner } = useStore()
+  const { state, review, pickWinner, shortlist: setShortlisted } = useStore()
   const toast = useToast()
-  const [shortlist, setShortlist] = useState<string[]>([])
   const [watching, setWatching] = useState<CreativeSubmission | null>(null)
   const [busy, setBusy] = useState('')
 
@@ -59,6 +58,7 @@ function ContestView({ campaign: c }: { campaign: Campaign }) {
   const daysLeft = daysBetween(TODAY, deadline)
   const entries = state.submissions.filter(s => s.campaignId === c.id && ['submitted', 'approved', 'paid', 'rejected'].includes(s.status))
   const inProgress = state.submissions.filter(s => s.campaignId === c.id && ['not_started', 'in_progress', 'changes_requested'].includes(s.status)).length
+  const shortlist = entries.filter(e => e.shortlisted).map(e => e.id)
   const placed = (place: number) => entries.find(e => e.placement === place)
   const creator = (id: string) => state.creators.find(x => x.id === id)
 
@@ -142,7 +142,7 @@ function ContestView({ campaign: c }: { campaign: Campaign }) {
                   {e.status === 'submitted' && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {open ? (
-                        <Button size="sm" variant={shortlisted ? 'primary' : 'secondary'} onClick={() => setShortlist(s => (shortlisted ? s.filter(x => x !== e.id) : [...s, e.id]))}>
+                        <Button size="sm" variant={shortlisted ? 'primary' : 'secondary'} loading={busy === `s${e.id}`} onClick={() => void act(`s${e.id}`, () => setShortlisted(e.id, !shortlisted), shortlisted ? 'Removed from the shortlist' : 'Shortlisted — your team can see it')}>
                           <Star size={13} /> {shortlisted ? 'Shortlisted' : 'Shortlist'}
                         </Button>
                       ) : c.prizes.map((_, i) => !placed(i + 1) && (

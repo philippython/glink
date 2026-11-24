@@ -100,6 +100,7 @@ export function OpportunityDetail() {
           <KV label="Deadline">{fmtDate(deadlineOf(c))}</KV>
           {m && m.reasons.length > 0 && <KV label="Why you’re matched"><ul className="space-y-0.5">{m.reasons.map(r => <li key={r}>{r}</li>)}</ul></KV>}
           {!contest && <KV label="Bonus">{money(c.bonusAmount)} if your video {c.bonusRule.charAt(0).toLowerCase() + c.bonusRule.slice(1)}</KV>}
+          {c.licence && <KV label="Usage rights">{c.licence} <span className="text-faint">Accepting grants the brand this licence for videos it approves and pays for.</span></KV>}
 
           <div className="mt-6 flex flex-wrap items-center gap-2">
             {contest ? (

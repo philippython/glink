@@ -89,7 +89,10 @@ test('full loop: launch → match → accept → upload → flag → changes →
   const launched = await brand.post('/api/campaigns', campaign)
   assert.equal(launched.status, 200, JSON.stringify(launched.body))
   const s1 = (await brand.get('/api/state')).body
-  assert.equal(s1.wallet, walletBefore - (380 + 150) * 2, 'budget held in escrow')
+  assert.equal(s1.wallet, +(walletBefore - (380 + 150) * 2 * 1.1).toFixed(2), 'budget plus the 10% platform fee held in escrow')
+  const mine = s1.campaigns.find((c: { id: string }) => c.id === launched.body.id)
+  assert.deepEqual(mine.usagePlatforms, ['TikTok', 'Instagram', 'Facebook'], 'default content licence recorded on the campaign')
+  assert.match(mine.licence, /paid ads.*12 months/)
   const invited = s1.matches.filter((m: { campaignId: string; status: string }) => m.campaignId === launched.body.id && m.status === 'invited')
   assert.equal(invited.length, 2, 'auto-match invites the top 2')
 
@@ -129,6 +132,41 @@ test('full loop: launch → match → accept → upload → flag → changes →
   const after = (await creator.get('/api/state')).body
   assert.ok(after.payments.some((p: { creativeId: string; bonus: number }) => p.creativeId === sub.id && p.bonus === 150), 'bonus paid automatically')
   assert.ok(after.submissions.find((s: { id: string }) => s.id === sub.id).winning)
+
+  const s2 = (await brand.get('/api/state')).body
+  assert.equal(s2.billing.feesPaid, 53, 'platform fee taken on the base fee and the bonus (10% of $530)')
+  const log = (await brand.get('/api/audit')).body
+  for (const a of ['campaign.launch', 'review.approve', 'payment.base', 'payment.bonus']) assert.ok(log.some((e: { action: string }) => e.action === a), `audit log has ${a}`)
+  assert.equal((await reviewer.get('/api/audit')).status, 403, 'only owners see the activity log')
+})
+
+test('content licence is validated; wallet refunds; shared contest shortlist', async () => {
+  const brand = new Client(), reviewer = new Client()
+  await brand.post('/api/auth/login', { email: 'alex@lumenskin.com', password: 'demo1234' })
+  await reviewer.post('/api/auth/login', { email: 'sam@lumenskin.com', password: 'demo1234' })
+  const bad = await brand.post('/api/campaigns', { usagePlatforms: [], usageMonths: 7 })
+  assert.equal(bad.status, 422)
+  assert.ok(bad.body.fields.usagePlatforms && bad.body.fields.usageMonths)
+
+  const before = (await brand.get('/api/state')).body.wallet
+  assert.equal((await reviewer.post('/api/billing/refund', { amount: 10 })).status, 403, 'only owners can refund')
+  assert.equal((await brand.post('/api/billing/refund', { amount: before + 1 })).status, 400, 'cannot refund more than the wallet')
+  const r = await brand.post('/api/billing/refund', { amount: 25 })
+  assert.equal(r.status, 200, JSON.stringify(r.body))
+  assert.equal((await brand.get('/api/state')).body.wallet, +(before - 25).toFixed(2))
+
+  const contest = (await brand.get('/api/state')).body.campaigns.find((c: { sourcing: string }) => c.sourcing === 'contest')
+  const leo = new Client()
+  await leo.post('/api/auth/login', { email: 'leo@example.com', password: 'demo1234' })
+  assert.equal((await leo.post(`/api/campaigns/${contest.id}/enter`)).status, 200, 'a creator enters the contest')
+  const s = (await brand.get('/api/state')).body
+  const entry = s.submissions.find((x: { campaignId: string }) => x.campaignId === contest.id)
+  assert.ok(entry, 'the entry is visible to the brand')
+  assert.equal((await reviewer.post(`/api/submissions/${entry.id}/shortlist`, { on: true })).status, 200, 'any teammate can shortlist')
+  assert.equal((await brand.get('/api/state')).body.submissions.find((x: { id: string }) => x.id === entry.id).shortlisted, true, 'teammates see the same shortlist')
+  assert.equal((await leo.post(`/api/submissions/${entry.id}/shortlist`, { on: true })).status, 403, 'creators cannot shortlist')
+  const direct = s.submissions.find((x: { campaignId: string }) => x.campaignId !== contest.id)
+  assert.equal((await brand.post(`/api/submissions/${direct.id}/shortlist`, { on: true })).status, 400)
 })
 
 test('creators only see their own data; brands cannot touch other brands', async () => {

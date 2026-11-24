@@ -12,6 +12,7 @@ export interface CampaignRow {
   target_customers: string; creative_angle: string; suggested_opening: string; story_flow: string; must_include: string; avoid: string
   deliverables: string; base_fee: number; bonus_amount: number; bonus_rule: string; benchmark_ctr: number; creators_wanted: number
   bonus_metric: BonusMetric; bonus_threshold: number | null; bonus_window_days: number
+  fee_pct: number; usage_platforms: string; usage_months: number; paid_usage: number
   sourcing: 'auto' | 'handpick' | 'contest'; prizes: string; timeline: string; status: 'draft' | 'live' | 'completed'; created_at: string
 }
 export interface SubmissionRow {
@@ -19,7 +20,7 @@ export interface SubmissionRow {
   mime: string | null; size_bytes: number | null; duration: number | null; width: number | null; height: number | null; script: string | null
   preflight: string; brief_match: number | null; ai_feedback: string | null; status: string; review_note: string | null
   submitted_at: string | null; approved_at: string | null; attempts: number; winning: number; placement: number | null; metrics: string | null
-  reminded_at: string | null; escalated_at: string | null; auto_approved: number
+  reminded_at: string | null; escalated_at: string | null; auto_approved: number; shortlisted_by: string | null
 }
 export interface Metrics { impressions: number; thumbstop: number; holdRate: number; clicks: number; conversions: number; spend: number; recordedAt: string }
 
@@ -27,6 +28,19 @@ export const deliverablesOf = (c: CampaignRow) => j<{ count: number; aspectRatio
 export const timelineOf = (c: CampaignRow) => j<{ label: string; date: string; deadline?: boolean }[]>(c.timeline, [])
 export const deadlineOf = (c: CampaignRow) => (timelineOf(c).find(m => m.deadline) ?? timelineOf(c).at(-1))?.date ?? c.created_at.slice(0, 10)
 export const prizesOf = (c: CampaignRow) => j<number[]>(c.prizes, [])
+
+/** Glink's fee on a creator payment (cents), at the rate fixed when the campaign launched. */
+export const feeOn = (c: Pick<CampaignRow, 'fee_pct'>, amount: number) => Math.round(amount * (c.fee_pct ?? 0) / 100)
+/** What launching a campaign holds from the wallet: creator budget plus the platform fee on it (cents). */
+export const holdOf = (c: CampaignRow) => budgetOf(c) + feeOn(c, budgetOf(c))
+
+// ─── Audit log ──────────────────────────────────────────────────────────────
+
+/** Records a change to money or permissions. Amounts in cents. */
+export function audit(e: { brandId?: string | null; creatorId?: string | null; userId?: string | null; action: string; detail?: string; amount?: number }) {
+  run('INSERT INTO audit_log (id, brand_id, creator_id, user_id, action, detail, amount, created_at) VALUES (?,?,?,?,?,?,?,?)',
+    id('aud'), e.brandId ?? null, e.creatorId ?? null, e.userId ?? null, e.action, e.detail ?? '', e.amount ?? null, now())
+}
 
 /** Budget reserved from the wallet when a campaign launches (cents). */
 export const budgetOf = (c: CampaignRow) => c.sourcing === 'contest'
@@ -113,7 +127,7 @@ export function inviteCreator(campaignId: string, creatorId: string) {
 
 export const walletBalance = (brandId: string) => one<{ b: number | null }>('SELECT SUM(amount) b FROM ledger WHERE brand_id = ?', brandId)!.b ?? 0
 
-export function ledgerEntry(brandId: string, kind: 'topup' | 'hold' | 'refund', amount: number, note: string, campaignId?: string) {
+export function ledgerEntry(brandId: string, kind: 'topup' | 'hold' | 'refund' | 'withdrawal', amount: number, note: string, campaignId?: string) {
   run('INSERT INTO ledger (id, brand_id, campaign_id, kind, amount, note, created_at) VALUES (?,?,?,?,?,?,?)', id('led'), brandId, campaignId ?? null, kind, amount, note, now())
 }
 
@@ -124,23 +138,30 @@ export function creditTopUp(brandId: string, amount: number, note: string, exter
   return Number(r.changes) > 0
 }
 
-/** Escrow still held for a campaign = its holds minus what has been paid or refunded. */
+/** Escrow still held for a campaign = its holds minus what has been paid, charged as fees or refunded. */
 export function escrowHeld(campaignId: string) {
   const held = -(one<{ s: number | null }>(`SELECT SUM(amount) s FROM ledger WHERE campaign_id = ? AND kind IN ('hold','refund')`, campaignId)!.s ?? 0)
   const paid = one<{ s: number | null }>('SELECT SUM(amount) s FROM payments WHERE campaign_id = ?', campaignId)!.s ?? 0
-  return Math.max(0, held - paid)
+  return Math.max(0, held - paid - feesCharged(campaignId))
 }
+
+export const feesCharged = (campaignId: string) => one<{ s: number | null }>('SELECT SUM(amount) s FROM platform_fees WHERE campaign_id = ?', campaignId)!.s ?? 0
 
 /** Pays a creator out of a campaign's escrow. Returns false if escrow can't cover it. */
 function pay(camp: CampaignRow, creatorId: string, submissionId: string | null, kind: 'base' | 'bonus' | 'prize', amount: number) {
   if (amount <= 0) return true
-  if (escrowHeld(camp.id) < amount) {
+  const fee = feeOn(camp, amount)
+  const short = amount + fee - escrowHeld(camp.id)
+  if (short > 0) {
     // Top up the hold from the wallet if possible (e.g. extra invites beyond the original budget).
-    if (walletBalance(camp.brand_id) < amount) return false
-    ledgerEntry(camp.brand_id, 'hold', -amount, `Additional escrow for ${camp.name}`, camp.id)
+    if (walletBalance(camp.brand_id) < short) return false
+    ledgerEntry(camp.brand_id, 'hold', -short, `Additional escrow for ${camp.name}`, camp.id)
   }
+  const paymentId = id('pay')
   run('INSERT INTO payments (id, creator_id, brand_id, campaign_id, submission_id, kind, amount, status, available_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    id('pay'), creatorId, camp.brand_id, camp.id, submissionId, kind, amount, 'pending', addDays(now(), 3), now())
+    paymentId, creatorId, camp.brand_id, camp.id, submissionId, kind, amount, 'pending', addDays(now(), 3), now())
+  if (fee > 0) run('INSERT INTO platform_fees (id, campaign_id, payment_id, amount, created_at) VALUES (?,?,?,?,?)', id('fee'), camp.id, paymentId, fee, now())
+  audit({ brandId: camp.brand_id, creatorId, action: `payment.${kind}`, detail: `${camp.name}${fee ? ` · platform fee $${(fee / 100).toLocaleString()}` : ''}`, amount })
   return true
 }
 
@@ -230,7 +251,8 @@ export function maybeCompleteCampaign(campaignId: string) {
   if (!contestDone && !directDone) return
   run("UPDATE campaigns SET status = 'completed' WHERE id = ?", campaignId)
   // Keep the bonus share in escrow until the bonus window closes; release the rest now.
-  const bonusReserve = camp.sourcing === 'contest' ? 0 : one<{ n: number }>(`SELECT COUNT(*) n FROM submissions WHERE campaign_id = ? AND status IN ('approved','paid') AND winning = 0`, campaignId)!.n * camp.bonus_amount
+  const bonuses = camp.sourcing === 'contest' ? 0 : one<{ n: number }>(`SELECT COUNT(*) n FROM submissions WHERE campaign_id = ? AND status IN ('approved','paid') AND winning = 0`, campaignId)!.n * camp.bonus_amount
+  const bonusReserve = bonuses + feeOn(camp, bonuses)
   const leftover = escrowHeld(campaignId) - bonusReserve
   if (leftover > 0) ledgerEntry(camp.brand_id, 'refund', leftover, `Unused budget from ${camp.name}`, campaignId)
   notify(brandUsers(camp.brand_id), { title: 'Campaign completed', body: `${camp.name}${leftover > 0 ? ` · $${(leftover / 100).toLocaleString()} returned to your wallet` : ''}`, link: '/brand/campaigns' })
